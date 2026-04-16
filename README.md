@@ -9,6 +9,13 @@
 3. 每日 / 每周观察清单
 4. 本地可视化前端仪表盘
 
+## 快速理解这个项目
+
+如果你想先看“跑出来到底长什么样”，先看：
+
+- `docs/sample_outputs.md`：样例输出说明
+- `docs/environment_setup.md`：环境准备说明
+
 ## 当前能力
 
 - 用 Qlib 历史样本训练量价 baseline

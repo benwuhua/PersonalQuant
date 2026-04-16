@@ -1,0 +1,50 @@
+name: smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  compile-and-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip setuptools wheel
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile source and scripts
+        run: python -m compileall src scripts
+
+      - name: Import smoke test
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+
+          root = Path.cwd()
+          sys.path.insert(0, str(root / 'src'))
+
+          import ashare_platform.announcements
+          import ashare_platform.config
+          import ashare_platform.dashboard
+          import ashare_platform.io_utils
+          import ashare_platform.priority
+          import ashare_platform.qlib_pipeline
+          import ashare_platform.summarizer
+          import ashare_platform.watchlist
+
+          print('import smoke ok')
+          PY
