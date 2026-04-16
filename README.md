@@ -201,6 +201,40 @@ python scripts/serve_dashboard.py
 http://127.0.0.1:8765
 ```
 
+## Developer-friendly entrypoints
+
+仓库现在补了几样更顺手的工程入口：
+
+- `Makefile`
+- `config/config.sample.yaml`
+- `.github/ISSUE_TEMPLATE/*`
+- `.github/pull_request_template.md`
+
+常见用法：
+
+```bash
+make help
+make init-config
+make smoke
+make run
+make dashboard
+make serve PORT=8765
+```
+
+如果你想使用自定义配置而不是默认 `config/config.yaml`：
+
+```bash
+make run CONFIG=config/config.local.yaml
+```
+
+底层通过环境变量：
+
+```text
+PERSONALQUANT_CONFIG=/path/to/config.yaml
+```
+
+来切换配置文件。
+
 ## Common commands
 
 ### 1) 运行完整主流程
