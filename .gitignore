@@ -24,5 +24,8 @@ data/processed/*
 data/archives/*
 !data/archives/.gitkeep
 
+# Local config overrides
+config/config.local.yaml
+
 # Notebook checkpoints
 .ipynb_checkpoints/

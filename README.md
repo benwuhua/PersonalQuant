@@ -205,12 +205,25 @@ http://127.0.0.1:8765
 
 仓库现在补了几样更顺手的工程入口：
 
-- `Makefile`
+- `scripts/dev.py`：统一 CLI 入口
+- `Makefile`：对常用 CLI 命令做更短的包装
 - `config/config.sample.yaml`
 - `.github/ISSUE_TEMPLATE/*`
 - `.github/pull_request_template.md`
 
-常见用法：
+推荐直接用统一 CLI：
+
+```bash
+python scripts/dev.py --help
+python scripts/dev.py init-config
+python scripts/dev.py smoke
+python scripts/dev.py run
+python scripts/dev.py dashboard
+python scripts/dev.py serve --port 8765
+python scripts/dev.py clean-pyc
+```
+
+如果你更喜欢短命令，也可以继续用 Makefile：
 
 ```bash
 make help
@@ -224,6 +237,7 @@ make serve PORT=8765
 如果你想使用自定义配置而不是默认 `config/config.yaml`：
 
 ```bash
+python scripts/dev.py --config config/config.local.yaml run
 make run CONFIG=config/config.local.yaml
 ```
 
