@@ -42,7 +42,10 @@ BUSINESS_PROGRESS_KEYWORDS = ['订单', '中标', '投产', '合作', '项目', 
 REPORT_KEYWORDS = ['年度报告', '年度报告摘要', '季度报告', '季度报告摘要', '一季度报告', '半年度报告', '半年报']
 PREANNOUNCE_POSITIVE_KEYWORDS = ['预增', '扭亏', '增长', '新签合同']
 PREANNOUNCE_NEGATIVE_KEYWORDS = ['预减', '亏损', '下滑']
-IR_KEYWORDS = ['业绩说明会', '投资者关系活动记录表', '调研活动']
+IR_KEYWORDS = ['业绩说明会', '投资者关系活动记录表', '调研活动', '投资者关系管理信息']
+IR_NOTICE_KEYWORDS = ['业绩说明会', '投资者关系活动记录表', '调研活动', '投资者关系管理信息', '网上业绩说明会']
+REVIEW_OPINION_KEYWORDS = ['核查意见', '法律意见书', '保荐意见', '专项核查意见']
+MEETING_CHANGE_KEYWORDS = ['变更会议地址', '变更会议地点', '会议地点变更']
 
 DEFAULT_SYSTEM_PROMPT = (
     '你是A股公告事件分析助手。你的任务是把单条公告提炼成可执行的事件卡片。'
@@ -84,6 +87,14 @@ def classify_event(title: str, content: str) -> str:
 
     if contains_any(title_text, LOW_VALUE_KEYWORDS):
         return '其他'
+    if contains_any(title_text, IR_NOTICE_KEYWORDS):
+        return '其他'
+    if contains_any(title_text, REVIEW_OPINION_KEYWORDS):
+        if contains_any(text, MNA_KEYWORDS):
+            return '融资并购'
+        return '其他'
+    if contains_any(title_text, MEETING_CHANGE_KEYWORDS):
+        return '其他'
     if '问询函回复' in title_text:
         return '融资并购' if contains_any(text, MNA_KEYWORDS) else '其他'
     if contains_any(title_text, RISK_KEYWORDS):
@@ -94,7 +105,7 @@ def classify_event(title: str, content: str) -> str:
         return '融资并购'
     if contains_any(text, BUSINESS_PROGRESS_KEYWORDS):
         return '经营进展'
-    if contains_any(title_text, IR_KEYWORDS) or contains_any(title_text, REPORT_KEYWORDS) or contains_any(text, ['业绩', '快报', '预增', '预减']):
+    if contains_any(title_text, REPORT_KEYWORDS) or contains_any(text, ['业绩', '快报', '预增', '预减']):
         return '业绩'
 
     hit = Counter()
@@ -115,9 +126,37 @@ def infer_event_profile(title: str, content: str) -> dict[str, str]:
     importance = 'medium'
     bias = 'neutral'
     confidence = 'medium'
-    analysis_mode = 'fallback_rule_based_v2'
+    analysis_mode = 'fallback_rule_based_v3'
 
     if contains_any(title_text, LOW_VALUE_KEYWORDS):
+        return {
+            'event_type': '其他',
+            'importance': 'low',
+            'bias': 'neutral',
+            'confidence': 'high',
+            'analysis_mode': analysis_mode,
+        }
+
+    if contains_any(title_text, IR_NOTICE_KEYWORDS):
+        is_notice = '通知' in title_text or '举行' in title_text
+        return {
+            'event_type': '其他',
+            'importance': 'low' if is_notice else 'medium',
+            'bias': 'neutral',
+            'confidence': 'high' if is_notice else 'medium',
+            'analysis_mode': analysis_mode,
+        }
+
+    if contains_any(title_text, REVIEW_OPINION_KEYWORDS):
+        return {
+            'event_type': '融资并购' if contains_any(text, MNA_KEYWORDS) else '其他',
+            'importance': 'medium' if contains_any(text, MNA_KEYWORDS) else 'low',
+            'bias': 'neutral',
+            'confidence': 'high',
+            'analysis_mode': analysis_mode,
+        }
+
+    if contains_any(title_text, MEETING_CHANGE_KEYWORDS):
         return {
             'event_type': '其他',
             'importance': 'low',
@@ -164,10 +203,6 @@ def infer_event_profile(title: str, content: str) -> dict[str, str]:
             importance = 'low'
             confidence = 'high'
             event_type = '其他'
-        elif contains_any(title_text, IR_KEYWORDS):
-            bias = 'positive'
-            importance = 'medium'
-            confidence = 'medium'
         else:
             bias = 'neutral'
             importance = 'medium'
