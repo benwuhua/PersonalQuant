@@ -1,0 +1,34 @@
+Hermes cron 用法说明
+
+用途
+- 当 Hermes 主模型 provider 可用时，可以把“公告事件卡片生成”交给 cron 任务执行。
+- 这样 summarization 直接复用 Hermes 自己当前配置的模型/provider，而不是项目脚本里单独接 API。
+
+当前前提
+- Hermes 当前默认 provider 在 ~/.hermes/config.yaml 中是：
+  - model.default: gpt-5.4
+  - model.provider: openai-codex
+  - model.base_url: https://chatgpt.com/backend-api/codex
+- 如果这个 provider 认证失效（例如 token refresh 401），cron 任务也会一起失败。
+- 所以 cron 不是绕过认证问题，而是复用 Hermes 的认证/模型调用链。
+
+推荐拆法
+1. 本地脚本负责：
+   - 候选池生成
+   - 公告抓取
+   - 落盘 announcements_raw.json
+2. cron 任务负责：
+   - 读取 announcements_raw.json
+   - 生成高质量 event_cards.json
+   - 重写 daily/weekly watchlist
+
+推荐 prompt 文件
+- docs/hermes_cron_event_cards_prompt.txt
+
+建议调度
+- 交易日早上：先本地更新候选池和公告，再跑 cron 总结
+- 周末：跑一次更完整的 weekly watchlist 重写
+
+注意
+- 如果之后重新修好 Hermes 的 openai-codex 认证，优先用 cron 路径做高质量总结
+- 如果 Hermes provider 仍不可用，则保留当前 mock/rule-based 路径作为兜底

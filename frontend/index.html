@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>个人A股投研平台</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">个人 A 股投研操作台</p>
+        <h1>量价候选 + 公告事件 + 风险观察</h1>
+        <p class="subtext">本地静态前端，读取 pipeline 输出，方便直接筛查 priority / risk / 事件卡片。</p>
+      </div>
+      <div class="hero-actions">
+        <button id="refreshBtn">刷新数据</button>
+        <span id="statusText">等待加载…</span>
+      </div>
+    </header>
+
+    <section class="summary-grid" id="summaryGrid"></section>
+
+    <section class="panel charts-panel">
+      <div class="panel-header">
+        <h2>图表概览</h2>
+        <span class="muted">快速看分布、结构和头部候选</span>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Priority / Risk 分布</h3>
+          <div id="distributionChart"></div>
+        </div>
+        <div class="chart-card">
+          <h3>事件类型统计</h3>
+          <div id="eventTypeChart"></div>
+        </div>
+        <div class="chart-card">
+          <h3>正文命中率</h3>
+          <div id="contentSourceChart"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Top Candidates 分数条形图</h3>
+          <div id="topCandidatesChart"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel filter-panel">
+      <div class="filter-row filter-row-main">
+        <label>
+          搜索股票/标题
+          <input id="searchInput" type="search" placeholder="例如 SH601818 / 宁德时代 / 业绩" />
+        </label>
+        <label>
+          视图
+          <select id="viewSelect">
+            <option value="priority">多头优先池</option>
+            <option value="risk">风险观察池</option>
+            <option value="events">事件卡片</option>
+            <option value="instruments">股票详情</option>
+          </select>
+        </label>
+        <label>
+          事件类型
+          <select id="eventTypeSelect">
+            <option value="">全部</option>
+          </select>
+        </label>
+      </div>
+      <div class="filter-row filter-row-secondary">
+        <label>
+          Bias
+          <select id="biasSelect">
+            <option value="">全部</option>
+            <option value="positive">positive</option>
+            <option value="neutral">neutral</option>
+            <option value="negative">negative</option>
+          </select>
+        </label>
+        <label>
+          风险状态
+          <select id="riskOnlySelect">
+            <option value="">全部</option>
+            <option value="risk_only">只看有风险</option>
+            <option value="non_risk">只看无风险</option>
+          </select>
+        </label>
+        <label>
+          快速排序提示
+          <input value="点击表头可升降序排序" disabled />
+        </label>
+      </div>
+    </section>
+
+    <section class="content-grid">
+      <div class="panel main-panel">
+        <div class="panel-header">
+          <h2 id="tableTitle">加载中</h2>
+          <span id="resultCount"></span>
+        </div>
+        <div class="table-wrap">
+          <table id="dataTable"></table>
+        </div>
+      </div>
+
+      <aside class="side-column">
+        <section class="panel detail-panel">
+          <div class="panel-header">
+            <h2>股票详情抽屉</h2>
+            <button id="closeDetailBtn" class="ghost-btn">清空</button>
+          </div>
+          <div id="detailDrawer" class="detail-drawer empty">
+            <p class="muted">点击左侧任意股票行，右侧会展示完整事件卡、风险信息和公告正文摘要。</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>重点摘要</h2>
+          <div id="highlights"></div>
+        </section>
+        <section class="panel watchlist-panel">
+          <h2>观察清单</h2>
+          <div class="watchlist-tabs">
+            <button class="watchlist-tab active" data-watchlist="daily">每日</button>
+            <button class="watchlist-tab" data-watchlist="weekly">每周</button>
+            <button class="watchlist-tab" data-watchlist="risk">风险</button>
+          </div>
+          <pre id="watchlistContent"></pre>
+        </section>
+      </aside>
+    </section>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

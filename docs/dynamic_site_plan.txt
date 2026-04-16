@@ -1,0 +1,61 @@
+个人A股投研平台动态网站改造方案
+
+目标
+- 把当前“静态前端 + 预生成JSON”升级成“动态网站”。
+- 页面可以实时读取最新候选池、事件卡、风险池，并支持后端接口、单票详情、筛选排序、后续定时刷新。
+
+当前基础
+- 已有本地前端 frontend/
+- 已有数据产出脚本与 outputs/*.csv/json/md
+- 当前 requirements 里没有 Flask/FastAPI，但环境里有 uvicorn，可优先走 FastAPI
+
+推荐方案
+1. 后端：FastAPI
+2. 前端：先复用现有 frontend，改成调用 /api/*
+3. 数据层：第一阶段仍然读取 data/outputs 下的产物；第二阶段再考虑接 SQLite/Postgres
+
+建议分两阶段做
+
+阶段1：动态网站 1.0（最快落地）
+- 新增 FastAPI 服务
+- 提供接口：
+  - /api/summary
+  - /api/priority
+  - /api/risk
+  - /api/events
+  - /api/instrument/{code}
+  - /api/watchlists
+- 前端从静态 dashboard_data.json 改成请求 API
+- 保留现有 UI 交互
+- 启动方式：uvicorn app:app
+
+阶段2：动态网站 2.0（更像正式系统）
+- 增加 SQLite 持久化
+- 支持按日期查看历史批次
+- 支持后台触发 pipeline
+- 支持用户配置、鉴权、定时任务、部署
+
+我建议现在直接做阶段1。
+理由
+- 改造成本低
+- 能最快把“可看”升级成“可服务”
+- 以后接数据库和公网部署都更自然
+
+最小实现清单
+1. requirements.txt 增加 fastapi
+2. 新增 backend/server.py
+3. 新增 API 层读取当前 outputs
+4. 前端 app.js 改成 fetch('/api/...')
+5. 新增 scripts/serve_dynamic_site.py
+6. 验证本地可打开动态网站
+
+后续可选增强
+- SQLite 历史归档
+- 登录保护
+- 单票历史时间线
+- 手动刷新/重跑pipeline按钮
+- 邮件/消息推送
+
+结论
+- 能做，而且现在这个项目非常适合改成动态网站。
+- 最优路径不是推倒重来，而是在现有前端上加 FastAPI API 层，先做动态网站 1.0。
