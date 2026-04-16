@@ -34,6 +34,14 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding='utf-8')
 
 
+def _read_json_object(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    with path.open('r', encoding='utf-8') as f:
+        data = json.load(f)
+    return data if isinstance(data, dict) else {}
+
+
 def _to_float(value: Any, default: float = 0.0) -> float:
     try:
         if value == '':
@@ -89,6 +97,9 @@ def build_dashboard_payload() -> dict[str, Any]:
             quality_buckets['fallback_or_low_quality'] += 1
 
     recent_archives = list_recent_archives(ARCHIVES_DIR, limit=8)
+    strategy_validation_summary = _read_json_object(OUTPUTS_DIR / 'strategy_validation_summary.json')
+    backtest_summary = _read_json_object(OUTPUTS_DIR / 'backtest_summary.json')
+    archive_diff = _read_json_object(OUTPUTS_DIR / 'archive_diff.json')
     summary = {
         'priority_count': len(priority_candidates),
         'risk_count': len(risk_candidates),
@@ -109,9 +120,15 @@ def build_dashboard_payload() -> dict[str, Any]:
         'event_cards': event_cards,
         'instrument_details': instrument_details,
         'recent_archives': recent_archives,
+        'strategy_validation_summary': strategy_validation_summary,
+        'backtest_summary': backtest_summary,
+        'archive_diff': archive_diff,
         'daily_watchlist': _read_text(OUTPUTS_DIR / 'daily_watchlist.md'),
         'weekly_watchlist': _read_text(OUTPUTS_DIR / 'weekly_watchlist.md'),
         'risk_watchlist': _read_text(OUTPUTS_DIR / 'risk_watchlist.md'),
+        'strategy_validation_report': _read_text(OUTPUTS_DIR / 'strategy_validation_report.md'),
+        'backtest_report': _read_text(OUTPUTS_DIR / 'backtest_summary.md'),
+        'archive_diff_report': _read_text(OUTPUTS_DIR / 'archive_diff.md'),
         'highlights': {
             'priority_top5': _top_items(priority_candidates, 'priority_score', limit=5),
             'risk_top5': _top_items(risk_candidates, 'risk_attention_score', limit=5),

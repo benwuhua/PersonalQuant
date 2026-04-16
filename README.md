@@ -125,6 +125,14 @@ Dashboard 浏览 + 历史归档
 - `weekly_watchlist.md`
 - `risk_watchlist.md`
 - `dashboard_data.json`
+- `strategy_validation_summary.json`
+- `strategy_validation_report.md`
+- `backtest_summary.json`
+- `backtest_summary.md`
+- `archive_diff.json`
+- `archive_diff.md`
+- `data/validation/validation_records.csv`
+- `data/outputs/timelines/*.md`
 - `data/archives/run_YYYYMMDD_HHMMSS/`
 
 ## Scoring logic
@@ -219,6 +227,10 @@ python scripts/dev.py init-config
 python scripts/dev.py smoke
 python scripts/dev.py run
 python scripts/dev.py dashboard
+python scripts/dev.py validate
+python scripts/dev.py backtest
+python scripts/dev.py archive-diff
+python scripts/dev.py timeline SH600875 --limit 5
 python scripts/dev.py serve --port 8765
 python scripts/dev.py clean-pyc
 ```

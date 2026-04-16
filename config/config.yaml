@@ -131,4 +131,5 @@ paths:
   processed_dir: data/processed
   announcements_dir: data/announcements
   archives_dir: data/archives
+  validation_dir: data/validation
   logs_dir: logs

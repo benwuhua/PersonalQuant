@@ -221,6 +221,10 @@ def fallback_summary(item: dict) -> dict:
     content = item['content']
     profile = infer_event_profile(title, content)
     summary = build_summary_text(content, limit=110) or title[:110]
+    catalyst_strength = 'strong' if profile['importance'] == 'high' and profile['bias'] == 'positive' else 'moderate' if profile['importance'] == 'medium' else 'weak'
+    surprise_level = 'high' if profile['importance'] == 'high' else 'medium' if profile['event_type'] in {'融资并购', '经营进展'} else 'low'
+    tradability = 'high' if profile['bias'] != 'neutral' or profile['event_type'] in {'经营进展', '业绩', '分红回购'} else 'medium'
+    directionality_reason = f"{profile['event_type']} / {profile['bias']} / importance={profile['importance']}"
     return {
         'event_type': profile['event_type'],
         'importance': profile['importance'],
@@ -230,6 +234,12 @@ def fallback_summary(item: dict) -> dict:
         'suggested_action': '人工复核公告原文并结合盘面判断。',
         'confidence': profile['confidence'],
         'analysis_mode': profile['analysis_mode'],
+        'catalyst_strength': catalyst_strength,
+        'surprise_level': surprise_level,
+        'tradability': tradability,
+        'directionality_reason': directionality_reason,
+        'rule_tag': profile.get('event_type', '其他'),
+        'rule_version': profile.get('analysis_mode', 'fallback_rule_based_v3'),
     }
 
 
@@ -266,7 +276,11 @@ def build_prompt(item: dict) -> str:
         'bias': 'positive|negative|neutral',
         'watch_points': ['2到3条关键观察点'],
         'suggested_action': '一句中文行动建议',
-        'confidence': 'high|medium|low'
+        'confidence': 'high|medium|low',
+        'catalyst_strength': 'strong|moderate|weak',
+        'surprise_level': 'high|medium|low',
+        'tradability': 'high|medium|low',
+        'directionality_reason': '一句话说明为什么偏正向/负向/中性'
     }
     return (
         '请根据下面的A股公告信息生成事件卡片。\n'
@@ -347,11 +361,17 @@ def summarize_announcement(item: dict, llm_cfg: dict) -> dict:
         'watch_points': watch_points[:3],
         'suggested_action': result.get('suggested_action', '人工复核公告原文并结合盘面判断。'),
         'confidence': result.get('confidence', 'low'),
+        'catalyst_strength': result.get('catalyst_strength', 'weak'),
+        'surprise_level': result.get('surprise_level', 'low'),
+        'tradability': result.get('tradability', 'medium'),
+        'directionality_reason': result.get('directionality_reason', ''),
+        'rule_tag': result.get('rule_tag', result.get('event_type', '其他')),
+        'rule_version': result.get('rule_version', result.get('analysis_mode', 'fallback_rule_based_v3')),
         'raw_content': item['content'],
         'column_names': item.get('column_names', []),
         'pdf_url': item.get('pdf_url', ''),
         'source': item.get('source', 'unknown'),
         'llm_provider': provider,
-        'analysis_mode': result.get('analysis_mode', 'fallback_rule_based_v2'),
+        'analysis_mode': result.get('analysis_mode', 'fallback_rule_based_v3'),
         'llm_error': llm_error,
     }

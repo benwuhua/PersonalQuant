@@ -24,6 +24,9 @@ data/processed/*
 data/archives/*
 !data/archives/.gitkeep
 
+data/validation/*
+!data/validation/.gitkeep
+
 # Local config overrides
 config/config.local.yaml
 

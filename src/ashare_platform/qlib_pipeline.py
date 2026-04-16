@@ -42,6 +42,18 @@ FEATURE_COLS = [
     'volatility_20',
     'price_position_20',
     'volume_zscore_20',
+    'excess_ret_5',
+    'excess_ret_10',
+    'excess_ret_20',
+    'close_ma5_slope',
+    'close_ma10_slope',
+    'close_ma20_slope',
+    'volatility_regime_20',
+    'breakout_strength_20',
+    'distance_from_high_20',
+    'up_volume_ratio_10',
+    'down_volume_ratio_10',
+    'streak_up_days',
 ]
 
 RAW_COLS = ['close', 'open', 'high', 'low', 'volume']
@@ -75,6 +87,23 @@ def _safe_price_position(close: pd.Series, rolling_low: pd.Series, rolling_high:
 def _safe_zscore(series: pd.Series, rolling_mean: pd.Series, rolling_std: pd.Series) -> pd.Series:
     denom = rolling_std.replace(0, pd.NA)
     return (series - rolling_mean) / denom
+
+
+def _rolling_slope(series: pd.Series, window: int) -> pd.Series:
+    ma = series.rolling(window).mean()
+    return ma / ma.shift(window) - 1
+
+
+def _streak_up_days(ret_series: pd.Series) -> pd.Series:
+    streaks = []
+    streak = 0
+    for value in ret_series.fillna(0):
+        if value > 0:
+            streak += 1
+        else:
+            streak = 0
+        streaks.append(streak)
+    return pd.Series(streaks, index=ret_series.index, dtype=float)
 
 
 def add_derived_features(panel: pd.DataFrame, label_horizon: int | None = None) -> pd.DataFrame:
@@ -115,6 +144,29 @@ def add_derived_features(panel: pd.DataFrame, label_horizon: int | None = None) 
 
     volume_std_20 = g['volume'].transform(lambda s: s.rolling(20).std())
     panel['volume_zscore_20'] = _safe_zscore(panel['volume'], panel['volume_ma20'], volume_std_20)
+
+    market_returns = panel.groupby('datetime')['ret_1'].mean().sort_index()
+    market_frame = pd.DataFrame({'datetime': market_returns.index, 'market_ret_1': market_returns.values})
+    market_frame['market_ret_5'] = (1 + market_frame['market_ret_1']).rolling(5).apply(lambda x: x.prod(), raw=True) - 1
+    market_frame['market_ret_10'] = (1 + market_frame['market_ret_1']).rolling(10).apply(lambda x: x.prod(), raw=True) - 1
+    market_frame['market_ret_20'] = (1 + market_frame['market_ret_1']).rolling(20).apply(lambda x: x.prod(), raw=True) - 1
+    panel = panel.merge(market_frame[['datetime', 'market_ret_5', 'market_ret_10', 'market_ret_20']], on='datetime', how='left')
+    panel['excess_ret_5'] = panel['ret_5'] - panel['market_ret_5']
+    panel['excess_ret_10'] = panel['ret_10'] - panel['market_ret_10']
+    panel['excess_ret_20'] = panel['ret_20'] - panel['market_ret_20']
+
+    panel['close_ma5_slope'] = g['close'].transform(lambda s: _rolling_slope(s, 5))
+    panel['close_ma10_slope'] = g['close'].transform(lambda s: _rolling_slope(s, 10))
+    panel['close_ma20_slope'] = g['close'].transform(lambda s: _rolling_slope(s, 20))
+    panel['volatility_regime_20'] = panel['volatility_5'] / panel['volatility_20'].replace(0, pd.NA)
+    panel['breakout_strength_20'] = panel['close'] / rolling_high_20.replace(0, pd.NA) - 1
+    panel['distance_from_high_20'] = panel['close'] / rolling_high_20.replace(0, pd.NA) - 1
+
+    up_volume = panel['volume'].where(panel['ret_1'] > 0, 0.0)
+    down_volume = panel['volume'].where(panel['ret_1'] <= 0, 0.0)
+    panel['up_volume_ratio_10'] = up_volume.groupby(panel['instrument']).transform(lambda s: s.rolling(10).sum()) / g['volume'].transform(lambda s: s.rolling(10).sum()).replace(0, pd.NA)
+    panel['down_volume_ratio_10'] = down_volume.groupby(panel['instrument']).transform(lambda s: s.rolling(10).sum()) / g['volume'].transform(lambda s: s.rolling(10).sum()).replace(0, pd.NA)
+    panel['streak_up_days'] = g['ret_1'].transform(_streak_up_days)
 
     if label_horizon is not None:
         panel['label'] = g['close'].shift(-label_horizon) / panel['close'] - 1
@@ -161,12 +213,7 @@ def train_model(train: pd.DataFrame, valid: pd.DataFrame, model_cfg: dict):
 
 
 def build_feature_importance(model) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            'feature': FEATURE_COLS,
-            'importance': model.feature_importances_,
-        }
-    ).sort_values('importance', ascending=False).reset_index(drop=True)
+    return pd.DataFrame({'feature': FEATURE_COLS, 'importance': model.feature_importances_}).sort_values('importance', ascending=False).reset_index(drop=True)
 
 
 def score_latest_topk(model, score: pd.DataFrame, top_k: int, source_label: str = 'qlib_sample') -> pd.DataFrame:
@@ -177,8 +224,7 @@ def score_latest_topk(model, score: pd.DataFrame, top_k: int, source_label: str 
     latest = latest.sort_values('score', ascending=False).head(top_k).reset_index(drop=True)
     latest['rank'] = latest.index + 1
     latest['candidate_source'] = source_label
-    cols = ['rank', 'datetime', 'instrument', 'score', 'candidate_source']
-    return latest[cols]
+    return latest[['rank', 'datetime', 'instrument', 'score', 'candidate_source']]
 
 
 def stock_code_to_instrument(stock_code: str) -> str:
@@ -227,7 +273,7 @@ def fetch_recent_hist_for_code(stock_code: str, start_date: str, end_date: str) 
 
 def build_live_feature_panel(cfg: dict) -> pd.DataFrame:
     lcfg = cfg.get('live_data', {})
-    lookback_days = int(lcfg.get('lookback_days', 90))
+    lookback_days = int(lcfg.get('lookback_days', 120))
     end_dt = datetime.now()
     start_dt = end_dt - timedelta(days=lookback_days)
     start_date = str(lcfg.get('start_date') or start_dt.strftime('%Y%m%d'))
@@ -237,10 +283,7 @@ def build_live_feature_panel(cfg: dict) -> pd.DataFrame:
     panels: list[pd.DataFrame] = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(fetch_recent_hist_for_code, code, start_date, end_date): code
-            for code in stock_codes
-        }
+        futures = {executor.submit(fetch_recent_hist_for_code, code, start_date, end_date): code for code in stock_codes}
         for future in as_completed(futures):
             try:
                 hist = future.result()

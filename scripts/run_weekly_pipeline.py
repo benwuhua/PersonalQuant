@@ -7,12 +7,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
 from ashare_platform.announcements import fetch_announcements_for_candidates
+from ashare_platform.archive_diff import write_archive_diff
 from ashare_platform.config import load_config
 from ashare_platform.dashboard import write_dashboard_payload
+from ashare_platform.evaluation import run_backtest_evaluation
 from ashare_platform.io_utils import archive_output_batch, ensure_dir, write_json
 from ashare_platform.priority import build_priority_candidates, build_risk_candidates
-from ashare_platform.qlib_pipeline import build_feature_importance, build_training_artifacts, generate_topk_candidates, init_qlib
+from ashare_platform.qlib_pipeline import FEATURE_COLS, build_feature_importance, build_training_artifacts, generate_topk_candidates, init_qlib
 from ashare_platform.summarizer import summarize_announcement
+from ashare_platform.timeline import write_instrument_timeline
+from ashare_platform.validation import update_validation_artifacts
 from ashare_platform.watchlist import build_watchlists
 
 
@@ -22,6 +26,7 @@ def main() -> None:
     processed_dir = ensure_dir(ROOT / cfg['paths']['processed_dir'])
     ensure_dir(ROOT / cfg['paths']['logs_dir'])
     archives_dir = ensure_dir(ROOT / cfg['paths'].get('archives_dir', 'data/archives'))
+    validation_dir = ensure_dir(ROOT / cfg['paths'].get('validation_dir', 'data/validation'))
 
     provider_uri = init_qlib(cfg['qlib']['provider_uri'], cfg['qlib']['region'])
     print('provider_uri', provider_uri)
@@ -80,8 +85,25 @@ def main() -> None:
     print('weekly_path', weekly_path)
     print('risk_watchlist_path', risk_watchlist_path)
 
+    scored_backtest = score.copy()
+    scored_backtest['score'] = model.predict(scored_backtest[FEATURE_COLS])
+    backtest_paths = run_backtest_evaluation(scored_backtest, outputs_dir, processed_dir, top_k=int(cfg['qlib'].get('top_k', 30)))
+    print('backtest_summary_path', backtest_paths['summary_md_path'])
+
+    validation_paths = update_validation_artifacts(validation_dir, outputs_dir, topk, priority_candidates, risk_candidates)
+    print('validation_records_path', validation_paths['records_path'])
+    print('validation_report_path', validation_paths['report_path'])
+
     archive_dir = archive_output_batch(outputs_dir, archives_dir)
     print('archive_dir', archive_dir)
+
+    archive_diff_paths = write_archive_diff(archives_dir, outputs_dir)
+    print('archive_diff_path', archive_diff_paths['md_path'])
+
+    timelines_dir = ensure_dir(outputs_dir / 'timelines')
+    for instrument in priority_candidates['instrument'].head(5).astype(str).tolist():
+        write_instrument_timeline(archives_dir, timelines_dir, instrument, limit=20)
+    print('timelines_dir', timelines_dir)
 
     dashboard_path = write_dashboard_payload(outputs_dir / 'dashboard_data.json')
     print('dashboard_path', dashboard_path)
