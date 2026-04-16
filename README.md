@@ -73,17 +73,30 @@ logs/                    运行日志（默认忽略）
 
 ## 环境准备
 
-推荐直接使用已经验证可用的 Qlib 环境：
+推荐运行环境：
+
+- macOS Apple Silicon
+- Python 3.11
+- 已验证可用的 Qlib 虚拟环境：`~/.venvs/qlib`
+
+最快启动方式：
 
 ```bash
 source ~/.venvs/qlib-activate.sh
+python -V
+python -c "import qlib, akshare, lightgbm, pandas; print('env ok')"
 ```
 
 如果你需要自行安装依赖：
 
 ```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 ```
+
+更完整的环境说明见：`docs/environment_setup.md`
 
 ## 快速开始
 
