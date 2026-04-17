@@ -85,6 +85,15 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     return _run([_python(), 'scripts/build_instrument_timeline.py', args.instrument, '--limit', str(args.limit)], config=args.config)
 
 
+def cmd_cron_run(args: argparse.Namespace) -> int:
+    env = _env_with_config(args.config)
+    script_path = ROOT / 'scripts' / 'run_cron_workflow.sh'
+    print('run:', script_path)
+    if env.get('PERSONALQUANT_CONFIG'):
+        print('config:', env['PERSONALQUANT_CONFIG'])
+    return subprocess.run(['bash', str(script_path)], cwd=ROOT, env=env, check=False).returncode
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     return _run(
         [_python(), 'scripts/serve_dashboard.py', '--host', args.host, '--port', str(args.port)],
@@ -141,6 +150,9 @@ def build_parser() -> argparse.ArgumentParser:
     timeline_parser.add_argument('instrument')
     timeline_parser.add_argument('--limit', type=int, default=20)
     timeline_parser.set_defaults(func=cmd_timeline)
+
+    cron_parser = subparsers.add_parser('cron-run', help='Run the full scheduled workflow wrapper with log capture')
+    cron_parser.set_defaults(func=cmd_cron_run)
 
     serve_parser = subparsers.add_parser('serve', help='Serve the local dashboard')
     serve_parser.add_argument('--host', default='127.0.0.1')

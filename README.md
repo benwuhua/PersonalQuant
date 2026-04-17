@@ -12,6 +12,7 @@ PersonalQuant 是一个面向个人研究场景的 A 股投研操作台。它不
 2. 候选股最近 7 天公告事件卡片
 3. 每日 / 每周 / 风险观察清单
 4. 本地可视化前端仪表盘
+5. 前向验证 / 历史评估 / 批次 diff / 单票时间线
 
 如果你想先看“跑出来到底长什么样”，先看：
 
@@ -231,6 +232,7 @@ python scripts/dev.py validate
 python scripts/dev.py backtest
 python scripts/dev.py archive-diff
 python scripts/dev.py timeline SH600875 --limit 5
+python scripts/dev.py cron-run
 python scripts/dev.py serve --port 8765
 python scripts/dev.py clean-pyc
 ```
@@ -243,6 +245,7 @@ make init-config
 make smoke
 make run
 make dashboard
+make cron-run
 make serve PORT=8765
 ```
 
@@ -276,6 +279,10 @@ python scripts/run_weekly_pipeline.py
 - 事件卡片生成
 - priority / risk 候选池生成
 - watchlist 输出
+- forward validation 快照 / 回填 / 报告
+- historical backtest 评估摘要
+- archive diff
+- top priority 时间线文件
 - dashboard 数据快照生成
 - 当前批次归档
 
@@ -301,7 +308,34 @@ python scripts/serve_dashboard.py
 - 事件卡片浏览
 - 股票详情聚合
 - 搜索与基础筛选
-- recent_archives 数据展示入口
+- 运行与验证概览卡片
+- strategy validation / backtest / archive diff 报告切换
+- recent_archives 数据展示
+- 单票时间线展示
+
+## Scheduled workflow / cron
+
+完整定时入口现在是：
+
+```bash
+bash scripts/run_cron_workflow.sh
+```
+
+它会：
+- 激活 `~/.venvs/qlib-activate.sh`
+- 执行完整 pipeline
+- 刷新 validation / backtest / archive diff / timelines / dashboard data
+- 把运行日志写入 `logs/cron/`
+
+建议默认计划：
+
+```cron
+35 8 * * 1-5
+```
+
+这样工作日早上会自动生成一轮新的研究快照。
+
+更完整说明见：`docs/cron_workflow.md`
 
 ## CI
 

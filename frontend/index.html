@@ -11,8 +11,8 @@
     <header class="hero">
       <div>
         <p class="eyebrow">个人 A 股投研操作台</p>
-        <h1>量价候选 + 公告事件 + 风险观察</h1>
-        <p class="subtext">本地静态前端，读取 pipeline 输出，方便直接筛查 priority / risk / 事件卡片。</p>
+        <h1>量价候选 + 公告事件 + 风险观察 + 验证复盘</h1>
+        <p class="subtext">本地静态前端，读取 pipeline 输出，除了候选池和事件卡，还能直接查看前向验证、历史评估、批次 diff 和单票时间线。</p>
       </div>
       <div class="hero-actions">
         <button id="refreshBtn">刷新数据</button>
@@ -21,6 +21,21 @@
     </header>
 
     <section class="summary-grid" id="summaryGrid"></section>
+
+    <section class="panel ops-panel">
+      <div class="panel-header">
+        <h2>运行与验证概览</h2>
+        <span class="muted">把当前后端能力直接抬到首页</span>
+      </div>
+      <div class="ops-grid" id="opsGrid"></div>
+      <div class="recent-archives-block">
+        <div class="panel-header compact">
+          <h3>最近归档</h3>
+          <span class="muted">用于回放、时间线、批次对比</span>
+        </div>
+        <div id="recentArchives"></div>
+      </div>
+    </section>
 
     <section class="panel charts-panel">
       <div class="panel-header">
@@ -112,7 +127,7 @@
             <button id="closeDetailBtn" class="ghost-btn">清空</button>
           </div>
           <div id="detailDrawer" class="detail-drawer empty">
-            <p class="muted">点击左侧任意股票行，右侧会展示完整事件卡、风险信息和公告正文摘要。</p>
+            <p class="muted">点击左侧任意股票行，右侧会展示完整事件卡、风险信息、公告正文摘要和历史时间线。</p>
           </div>
         </section>
 
@@ -120,6 +135,17 @@
           <h2>重点摘要</h2>
           <div id="highlights"></div>
         </section>
+
+        <section class="panel report-panel">
+          <h2>研究报告</h2>
+          <div class="report-tabs">
+            <button class="report-tab active" data-report="validation">验证</button>
+            <button class="report-tab" data-report="backtest">回测评估</button>
+            <button class="report-tab" data-report="archive_diff">批次Diff</button>
+          </div>
+          <pre id="reportContent"></pre>
+        </section>
+
         <section class="panel watchlist-panel">
           <h2>观察清单</h2>
           <div class="watchlist-tabs">

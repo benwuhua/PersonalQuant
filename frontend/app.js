@@ -2,16 +2,20 @@ const state = {
   payload: null,
   currentView: 'priority',
   currentWatchlist: 'daily',
+  currentReport: 'validation',
   selectedInstrument: null,
   sortKey: '',
   sortDirection: 'desc',
 };
 
 const summaryGrid = document.getElementById('summaryGrid');
+const opsGrid = document.getElementById('opsGrid');
+const recentArchives = document.getElementById('recentArchives');
 const dataTable = document.getElementById('dataTable');
 const tableTitle = document.getElementById('tableTitle');
 const resultCount = document.getElementById('resultCount');
 const highlights = document.getElementById('highlights');
+const reportContent = document.getElementById('reportContent');
 const watchlistContent = document.getElementById('watchlistContent');
 const searchInput = document.getElementById('searchInput');
 const viewSelect = document.getElementById('viewSelect');
@@ -46,6 +50,16 @@ function num(value, digits = 4) {
   return Number.isFinite(n) ? n.toFixed(digits) : '0.0000';
 }
 
+function pct(value, digits = 2) {
+  if (value === null || value === undefined || value === '' || Number.isNaN(Number(value))) return 'n/a';
+  return `${(Number(value) * 100).toFixed(digits)}%`;
+}
+
+function metricValue(value, digits = 4) {
+  if (value === null || value === undefined || value === '' || Number.isNaN(Number(value))) return 'n/a';
+  return num(value, digits);
+}
+
 function isNumericValue(value) {
   return value !== '' && value !== null && value !== undefined && !Number.isNaN(Number(value));
 }
@@ -78,16 +92,18 @@ async function loadPayload() {
   }
   statusText.textContent = '数据已加载';
   renderSummary();
+  renderOps();
   renderCharts();
   renderEventTypeOptions();
   renderHighlights();
+  renderReport();
   renderWatchlist();
   renderTable();
   renderDetailDrawer();
 }
 
 function renderSummary() {
-  const summary = state.payload.summary;
+  const summary = state.payload.summary || {};
   const items = [
     ['priority候选', summary.priority_count],
     ['风险候选', summary.risk_count],
@@ -95,13 +111,73 @@ function renderSummary() {
     ['公告原文', summary.announcement_count],
     ['PDF正文成功', summary.pdf_excerpt_count],
     ['标题回退', summary.title_only_count],
+    ['时间线文件', summary.timeline_count],
+    ['验证已比较天数', summary.validation_days_compared],
   ];
   summaryGrid.innerHTML = items.map(([label, value]) => `
     <div class="summary-card">
       <h3>${label}</h3>
-      <strong>${value}</strong>
+      <strong>${escapeHtml(value)}</strong>
     </div>
   `).join('');
+}
+
+function renderOps() {
+  const ops = state.payload.ops || {};
+  const compare = ops.validation_compare || {};
+  const backtest = ops.backtest || {};
+  const diff = ops.archive_diff || {};
+  const latestArchive = ops.latest_archive || {};
+
+  const cards = [
+    {
+      title: '前向验证',
+      lines: [
+        `已比较天数：${escapeHtml(compare.days_compared ?? 0)}`,
+        `priority赢5d天数：${escapeHtml(compare.priority_win_days_5d ?? 'n/a')}`,
+        `avg excess delta 5d：${metricValue(compare.avg_excess_delta_5d)}`,
+      ],
+    },
+    {
+      title: '历史横截面评估',
+      lines: [
+        `rank IC mean：${metricValue(backtest.rank_ic_mean)}`,
+        `rank IC IR：${metricValue(backtest.rank_ic_ir)}`,
+        `top30 avg return：${metricValue(backtest.topk_avg_return)}`,
+      ],
+    },
+    {
+      title: '批次变化',
+      lines: [
+        `新进priority：${escapeHtml(diff.new_priority_count ?? 0)}`,
+        `移出priority：${escapeHtml(diff.removed_priority_count ?? 0)}`,
+        `新进risk：${escapeHtml(diff.new_risk_count ?? 0)}`,
+      ],
+    },
+    {
+      title: '最近运行',
+      lines: [
+        `latest batch：${escapeHtml(latestArchive.batch_name || 'n/a')}`,
+        `archived at：${escapeHtml(latestArchive.archived_at || 'n/a')}`,
+        `outputs：priority / risk / validation / timeline`,
+      ],
+    },
+  ];
+
+  opsGrid.innerHTML = cards.map(card => `
+    <div class="ops-card">
+      <h3>${card.title}</h3>
+      ${card.lines.map(line => `<div class="ops-line">${escapeHtml(line)}</div>`).join('')}
+    </div>
+  `).join('');
+
+  const archives = state.payload.recent_archives || [];
+  recentArchives.innerHTML = archives.map(item => `
+    <div class="archive-item">
+      <strong>${escapeHtml(item.batch_name || '')}</strong>
+      <span>${escapeHtml(item.archived_at || '')}</span>
+    </div>
+  `).join('') || '<p class="muted">暂无归档。</p>';
 }
 
 function renderCharts() {
@@ -188,6 +264,18 @@ function renderHighlights() {
   `).join('');
 }
 
+function renderReport() {
+  const mapping = {
+    validation: state.payload.strategy_validation_report,
+    backtest: state.payload.backtest_report,
+    archive_diff: state.payload.archive_diff_report,
+  };
+  reportContent.textContent = mapping[state.currentReport] || '';
+  document.querySelectorAll('.report-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.report === state.currentReport);
+  });
+}
+
 function renderWatchlist() {
   const mapping = {
     daily: state.payload.daily_watchlist,
@@ -208,7 +296,7 @@ function renderDetailDrawer() {
   const detail = getInstrumentDetail(state.selectedInstrument);
   if (!detail) {
     detailDrawer.className = 'detail-drawer empty';
-    detailDrawer.innerHTML = '<p class="muted">点击左侧任意股票行，右侧会展示完整事件卡、风险信息和公告正文摘要。</p>';
+    detailDrawer.innerHTML = '<p class="muted">点击左侧任意股票行，右侧会展示完整事件卡、风险信息、公告正文摘要和历史时间线。</p>';
     return;
   }
   detailDrawer.className = 'detail-drawer';
@@ -216,6 +304,7 @@ function renderDetailDrawer() {
   const risk = detail.risk || {};
   const announcements = detail.announcements || [];
   const cards = detail.event_cards || [];
+  const timeline = detail.timeline || [];
 
   detailDrawer.innerHTML = `
     <div class="detail-section">
@@ -224,7 +313,7 @@ function renderDetailDrawer() {
         <div class="metric-chip">Priority<strong>${num(priority.priority_score)}</strong></div>
         <div class="metric-chip">Risk<strong>${risk.risk_attention_score ? num(risk.risk_attention_score) : '—'}</strong></div>
         <div class="metric-chip">事件卡<strong>${cards.length}</strong></div>
-        <div class="metric-chip">公告条数<strong>${announcements.length}</strong></div>
+        <div class="metric-chip">时间线节点<strong>${timeline.length}</strong></div>
       </div>
       <div class="card-meta">
         <span>top_event: ${escapeHtml(priority.top_event_type || '—')}</span>
@@ -248,6 +337,22 @@ function renderDetailDrawer() {
           <div class="announcement-text">${escapeHtml(card.summary || card.raw_content || '')}</div>
         </div>
       `).join('') || '<p class="muted">暂无事件卡。</p>'}
+    </div>
+
+    <div class="detail-section">
+      <h3>时间线</h3>
+      ${timeline.slice(0, 8).map(item => `
+        <div class="timeline-item">
+          <div class="timeline-title">${escapeHtml(item.run_batch || '')}</div>
+          <div class="card-meta">
+            <span>${escapeHtml(item.run_date || '')}</span>
+            <span>priority_rank=${escapeHtml(item.priority_rank || '')}</span>
+            <span>priority_score=${metricValue(item.priority_score)}</span>
+            <span>risk_rank=${escapeHtml(item.risk_rank || '—')}</span>
+          </div>
+          <div class="announcement-text">${escapeHtml(item.top_event_title || '')}</div>
+        </div>
+      `).join('') || '<p class="muted">当前还没有这只票的归档时间线。</p>'}
     </div>
 
     <div class="detail-section">
@@ -384,6 +489,10 @@ function renderTable() {
 
 function formatCell(value, key) {
   if (key.toLowerCase().includes('bias')) return badge(value);
+  if (key.toLowerCase().includes('rank') || key === 'event_count') {
+    const n = Number(value);
+    return Number.isFinite(n) ? String(Math.round(n)) : escapeHtml(value);
+  }
   if (typeof value === 'number') return value.toFixed(4);
   if (value === true) return '是';
   if (value === false) return '否';
@@ -396,6 +505,13 @@ document.querySelectorAll('.watchlist-tab').forEach(btn => {
   btn.addEventListener('click', () => {
     state.currentWatchlist = btn.dataset.watchlist;
     renderWatchlist();
+  });
+});
+
+document.querySelectorAll('.report-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.currentReport = btn.dataset.report;
+    renderReport();
   });
 });
 

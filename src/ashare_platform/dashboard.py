@@ -12,13 +12,15 @@ from .io_utils import list_recent_archives
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUTS_DIR = ROOT / 'data' / 'outputs'
 ARCHIVES_DIR = ROOT / 'data' / 'archives'
+TIMELINES_DIR = OUTPUTS_DIR / 'timelines'
 
 
 def _read_json(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     with path.open('r', encoding='utf-8') as f:
-        return json.load(f)
+        data = json.load(f)
+    return data if isinstance(data, list) else []
 
 
 def _read_csv(path: Path) -> list[dict[str, Any]]:
@@ -55,12 +57,67 @@ def _top_items(rows: list[dict[str, Any]], score_key: str, limit: int = 5) -> li
     return sorted(rows, key=lambda x: _to_float(x.get(score_key, 0.0)), reverse=True)[:limit]
 
 
+def _read_timeline_map(timelines_dir: Path) -> dict[str, list[dict[str, Any]]]:
+    if not timelines_dir.exists():
+        return {}
+    timeline_map: dict[str, list[dict[str, Any]]] = {}
+    for path in sorted(timelines_dir.glob('*.json')):
+        try:
+            with path.open('r', encoding='utf-8') as f:
+                rows = json.load(f)
+        except Exception:
+            continue
+        if isinstance(rows, list):
+            timeline_map[path.stem] = rows
+    return timeline_map
+
+
+def _build_ops_snapshot(
+    recent_archives: list[dict[str, Any]],
+    strategy_validation_summary: dict[str, Any],
+    backtest_summary: dict[str, Any],
+    archive_diff: dict[str, Any],
+) -> dict[str, Any]:
+    compare = strategy_validation_summary.get('compare_priority_vs_quant_top10', {})
+    latest_archive = recent_archives[0] if recent_archives else {}
+    previous_archive = recent_archives[1] if len(recent_archives) > 1 else {}
+    return {
+        'latest_archive': latest_archive,
+        'previous_archive': previous_archive,
+        'validation_compare': {
+            'days_compared': compare.get('days_compared', 0),
+            'priority_win_days_1d': compare.get('priority_win_days_1d'),
+            'priority_win_days_3d': compare.get('priority_win_days_3d'),
+            'priority_win_days_5d': compare.get('priority_win_days_5d'),
+            'avg_excess_delta_1d': compare.get('avg_excess_delta_1d'),
+            'avg_excess_delta_3d': compare.get('avg_excess_delta_3d'),
+            'avg_excess_delta_5d': compare.get('avg_excess_delta_5d'),
+        },
+        'backtest': {
+            'rank_ic_mean': backtest_summary.get('rank_ic_mean'),
+            'rank_ic_ir': backtest_summary.get('rank_ic_ir'),
+            'topk_count': backtest_summary.get('topk', {}).get('count'),
+            'topk_avg_return': backtest_summary.get('topk', {}).get('avg_topk_return'),
+            'topk_positive_ratio': backtest_summary.get('topk', {}).get('positive_ratio'),
+        },
+        'archive_diff': {
+            'latest_batch': archive_diff.get('latest_batch', ''),
+            'previous_batch': archive_diff.get('previous_batch', ''),
+            'new_priority_count': len(archive_diff.get('new_priority_entries', [])),
+            'removed_priority_count': len(archive_diff.get('removed_priority_entries', [])),
+            'new_risk_count': len(archive_diff.get('new_risk_entries', [])),
+            'removed_risk_count': len(archive_diff.get('removed_risk_entries', [])),
+        },
+    }
+
+
 def build_dashboard_payload() -> dict[str, Any]:
     priority_candidates = _read_csv(OUTPUTS_DIR / 'priority_candidates.csv')
     risk_candidates = _read_csv(OUTPUTS_DIR / 'risk_candidates.csv')
     top30_candidates = _read_csv(OUTPUTS_DIR / 'top30_candidates.csv')
     event_cards = _read_json(OUTPUTS_DIR / 'event_cards.json')
     announcements = _read_json(OUTPUTS_DIR / 'announcements_raw.json')
+    timeline_map = _read_timeline_map(TIMELINES_DIR)
 
     priority_by_instrument = {row.get('instrument', ''): row for row in priority_candidates}
     risk_by_instrument = {row.get('instrument', ''): row for row in risk_candidates}
@@ -81,6 +138,7 @@ def build_dashboard_payload() -> dict[str, Any]:
                 'risk': risk_by_instrument.get(instrument, {}),
                 'event_cards': cards,
                 'announcements': raw_announcements,
+                'timeline': timeline_map.get(instrument, []),
                 'event_count': len(cards),
                 'has_risk': instrument in risk_by_instrument,
             }
@@ -100,6 +158,7 @@ def build_dashboard_payload() -> dict[str, Any]:
     strategy_validation_summary = _read_json_object(OUTPUTS_DIR / 'strategy_validation_summary.json')
     backtest_summary = _read_json_object(OUTPUTS_DIR / 'backtest_summary.json')
     archive_diff = _read_json_object(OUTPUTS_DIR / 'archive_diff.json')
+    ops = _build_ops_snapshot(recent_archives, strategy_validation_summary, backtest_summary, archive_diff)
     summary = {
         'priority_count': len(priority_candidates),
         'risk_count': len(risk_candidates),
@@ -110,6 +169,9 @@ def build_dashboard_payload() -> dict[str, Any]:
         'high_quality_excerpt_count': quality_buckets['high_quality'],
         'fallback_or_low_quality_count': quality_buckets['fallback_or_low_quality'],
         'archive_count': len(recent_archives),
+        'timeline_count': len(timeline_map),
+        'validation_days_compared': ops['validation_compare'].get('days_compared', 0),
+        'latest_batch': ops['latest_archive'].get('batch_name', ''),
     }
 
     return {
@@ -123,6 +185,7 @@ def build_dashboard_payload() -> dict[str, Any]:
         'strategy_validation_summary': strategy_validation_summary,
         'backtest_summary': backtest_summary,
         'archive_diff': archive_diff,
+        'ops': ops,
         'daily_watchlist': _read_text(OUTPUTS_DIR / 'daily_watchlist.md'),
         'weekly_watchlist': _read_text(OUTPUTS_DIR / 'weekly_watchlist.md'),
         'risk_watchlist': _read_text(OUTPUTS_DIR / 'risk_watchlist.md'),
