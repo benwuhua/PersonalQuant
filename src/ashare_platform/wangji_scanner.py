@@ -51,7 +51,7 @@ FLOAT_RULE_KEYS = {
 INT_RULE_KEYS = {'setup_days', 'pullback_days', 'vol_ratio_lookback'}
 
 
-def _build_live_hist_panel(cfg: dict) -> pd.DataFrame:
+def _build_live_hist_panel(cfg: dict, progress_callback=None) -> pd.DataFrame:
     lcfg = cfg.get('live_data', {})
     lookback_days = max(int(lcfg.get('lookback_days', 120)), 220)
     end_dt = datetime.now()
@@ -62,15 +62,20 @@ def _build_live_hist_panel(cfg: dict) -> pd.DataFrame:
     stock_codes = fetch_csi300_constituents()
     panels: list[pd.DataFrame] = []
 
+    total_codes = len(stock_codes)
+    completed_codes = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(fetch_recent_hist_for_code, code, start_date, end_date): code for code in stock_codes}
         for future in as_completed(futures):
+            completed_codes += 1
             try:
                 hist = future.result()
             except Exception:
                 hist = pd.DataFrame()
             if hist is not None and not hist.empty:
                 panels.append(hist)
+            if progress_callback and (completed_codes == 1 or completed_codes == total_codes or completed_codes % 30 == 0):
+                progress_callback('fetching', f'正在抓取行情数据：{completed_codes}/{total_codes}')
 
     if not panels:
         raise RuntimeError('未抓到任何实时行情数据，无法运行 wangji-scanner。')
@@ -260,24 +265,37 @@ def run_wangji_scanner(
     profile_name: str,
     daily: pd.DataFrame | None = None,
     overrides: dict[str, Any] | None = None,
+    progress_callback=None,
 ) -> pd.DataFrame:
     rules = normalize_profile_rules(profile_name, overrides)
-    daily_panel = daily.copy() if daily is not None else _build_live_hist_panel(cfg)
+    if progress_callback:
+        progress_callback('preparing', '正在准备扫描参数')
+    daily_panel = daily.copy() if daily is not None else _build_live_hist_panel(cfg, progress_callback=progress_callback)
+    if progress_callback:
+        progress_callback('weekly', '正在聚合周线并计算均线')
     weekly = _build_weekly_panel(daily_panel)
     rows: list[dict[str, Any]] = []
-    for instrument, group in daily_panel.groupby('instrument'):
+    groups = list(daily_panel.groupby('instrument'))
+    total_groups = len(groups)
+    for idx, (instrument, group) in enumerate(groups, start=1):
         weekly_group = weekly[weekly['instrument'] == instrument].copy()
         row = _evaluate_instrument(group.copy(), weekly_group, profile_name, rules)
         if row is not None:
             rows.append(row)
+        if progress_callback and (idx == 1 or idx == total_groups or idx % 50 == 0):
+            progress_callback('scanning', f'正在逐票筛选：{idx}/{total_groups}')
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
+    if progress_callback:
+        progress_callback('ranking', '正在排序候选并生成结果')
     df = df.sort_values(
         ['pattern_passed', 'rules_passed_count', 'breakout_ret', 'vol_ratio_5', 'pullback_avg_vol_ratio'],
         ascending=[False, False, False, False, True],
     ).reset_index(drop=True)
     df['scanner_rank'] = df.index + 1
+    if progress_callback:
+        progress_callback('done', '候选生成完成')
     return df
 
 

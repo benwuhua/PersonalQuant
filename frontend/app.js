@@ -6,6 +6,7 @@ const state = {
   currentScreeningScanner: 'model_scanner',
   currentWangjiProfile: 'strict',
   customWangjiRuns: {},
+  wangjiJob: null,
   selectedInstrument: null,
   sortKey: '',
   sortDirection: 'desc',
@@ -147,14 +148,52 @@ function currentWangjiResult() {
   return wangji[state.currentWangjiProfile] || { rows: [], report: '', summary: {} };
 }
 
+function setWangjiInteractiveEnabled(enabled) {
+  document.querySelectorAll('.screening-tab, .screening-subtab').forEach(el => {
+    el.disabled = !enabled;
+  });
+  wangjiControls.querySelectorAll('input, button').forEach(el => {
+    el.disabled = !enabled;
+  });
+}
+
+async function pollWangjiJob(jobId) {
+  while (state.wangjiJob && state.wangjiJob.jobId === jobId) {
+    const res = await fetch(`/api/wangji-scanner/status?job_id=${encodeURIComponent(jobId)}`);
+    const data = await res.json();
+    if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+    state.wangjiJob = {
+      jobId,
+      status: data.status,
+      stage: data.stage,
+      message: data.message,
+    };
+    renderScreening();
+    if (data.status === 'completed') {
+      state.customWangjiRuns[state.currentWangjiProfile] = {
+        rows: data.rows || [],
+        report: data.report || '',
+        summary: data.summary || {},
+      };
+      state.wangjiJob = null;
+      renderScreening();
+      return;
+    }
+    if (data.status === 'failed') {
+      throw new Error(data.error || data.message || '生成失败');
+    }
+    await new Promise(resolve => setTimeout(resolve, 1200));
+  }
+}
+
 async function runWangjiScannerFromControls() {
   const params = {};
   wangjiControls.querySelectorAll('[data-param-key]').forEach(input => {
     params[input.dataset.paramKey] = input.value;
   });
-  const statusNode = wangjiControls.querySelector('.wangji-controls-status');
-  if (statusNode) statusNode.textContent = '生成中…';
   try {
+    state.wangjiJob = { jobId: null, status: 'starting', stage: 'starting', message: '正在提交任务…' };
+    renderScreening();
     const res = await fetch('/api/wangji-scanner/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -162,15 +201,12 @@ async function runWangjiScannerFromControls() {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    state.customWangjiRuns[state.currentWangjiProfile] = {
-      rows: data.rows || [],
-      report: data.report || '',
-      summary: data.summary || {},
-    };
-    if (statusNode) statusNode.textContent = `已生成：${data.summary?.passed ?? 0} 只通过 / ${data.summary?.total ?? 0} 只评估`;
+    state.wangjiJob = { jobId: data.job_id, status: data.status, stage: 'queued', message: '任务已创建，等待开始…' };
     renderScreening();
+    await pollWangjiJob(data.job_id);
   } catch (err) {
-    if (statusNode) statusNode.textContent = `生成失败：${err.message}`;
+    state.wangjiJob = { jobId: null, status: 'failed', stage: 'failed', message: `生成失败：${err.message}` };
+    renderScreening();
   }
 }
 
@@ -180,8 +216,10 @@ function renderWangjiControls() {
     return;
   }
   const params = defaultWangjiParams(state.currentWangjiProfile);
+  const busy = Boolean(state.wangjiJob && ['starting', 'queued', 'running'].includes(state.wangjiJob.status));
+  const statusText = state.wangjiJob?.message || '可调参数后点击生成';
   wangjiControls.innerHTML = `
-    <div class="wangji-controls-grid">
+    <div class="wangji-controls-grid ${busy ? 'is-busy' : ''}">
       <label>整理天数<input data-param-key="setup_days" type="number" min="3" step="1" value="${escapeHtml(params.setup_days)}" /></label>
       <label>整理振幅上限<input data-param-key="close_range_max" type="number" min="0.01" max="0.5" step="0.005" value="${escapeHtml(params.close_range_max)}" /></label>
       <label>整理单日波动上限<input data-param-key="max_daily_abs_ret_max" type="number" min="0.01" max="0.3" step="0.005" value="${escapeHtml(params.max_daily_abs_ret_max)}" /></label>
@@ -191,13 +229,14 @@ function renderWangjiControls() {
       <label>三日回撤下限<input data-param-key="pullback_ret_min" type="number" min="-0.3" max="0" step="0.005" value="${escapeHtml(params.pullback_ret_min)}" /></label>
       <label>回踩量比上限<input data-param-key="pullback_avg_vol_ratio_max" type="number" min="0.1" max="2" step="0.05" value="${escapeHtml(params.pullback_avg_vol_ratio_max)}" /></label>
     </div>
-    <div class="wangji-controls-actions">
-      <button id="runWangjiScannerBtn">按当前参数生成候选</button>
-      <span class="wangji-controls-status">可调参数后点击生成</span>
+    <div class="wangji-controls-actions ${busy ? 'is-busy' : ''}">
+      <button id="runWangjiScannerBtn">${busy ? '生成中…' : '按当前参数生成候选'}</button>
+      <span class="wangji-controls-status">${escapeHtml(statusText)}</span>
     </div>
   `;
   const btn = document.getElementById('runWangjiScannerBtn');
   if (btn) btn.addEventListener('click', runWangjiScannerFromControls);
+  setWangjiInteractiveEnabled(!busy);
 }
 
 function screeningData() {

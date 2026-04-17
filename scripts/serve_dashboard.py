@@ -6,6 +6,9 @@ import http.server
 import json
 import socketserver
 import sys
+import threading
+import time
+import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -13,13 +16,32 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = ROOT / 'frontend'
 sys.path.insert(0, str(ROOT / 'src'))
 
-from ashare_platform.config import load_config
+from ashare_platform.config import load_config  # noqa: E402
 from ashare_platform.wangji_scanner import (  # noqa: E402
     build_wangji_scanner_report,
     normalize_profile_rules,
     run_wangji_scanner,
     summarize_wangji_scanner_run,
 )
+
+JOB_LOCK = threading.Lock()
+SCAN_JOBS: dict[str, dict] = {}
+
+
+def _job_payload(job_id: str) -> dict:
+    with JOB_LOCK:
+        job = dict(SCAN_JOBS.get(job_id, {}))
+    if not job:
+        return {}
+    return job
+
+
+def _update_job(job_id: str, **updates):
+    with JOB_LOCK:
+        if job_id not in SCAN_JOBS:
+            return
+        SCAN_JOBS[job_id].update(updates)
+        SCAN_JOBS[job_id]['updated_at'] = time.time()
 
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
@@ -29,6 +51,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(302)
             self.send_header('Location', '/frontend/')
             self.end_headers()
+            return
+        if parsed.path == '/api/wangji-scanner/status':
+            self._handle_wangji_scanner_status(parsed)
             return
         return super().do_GET()
 
@@ -48,17 +73,57 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             params = payload.get('params') or {}
             cfg = load_config()
             rules = normalize_profile_rules(profile, params)
-            df = run_wangji_scanner(cfg, profile, overrides=rules)
-            response = {
-                'ok': True,
-                'profile': profile,
-                'summary': summarize_wangji_scanner_run(df, profile, rules),
-                'report': build_wangji_scanner_report(df, profile, rules),
-                'rows': df.fillna('').to_dict(orient='records'),
-            }
-            self._send_json(response)
+            job_id = uuid.uuid4().hex[:12]
+            with JOB_LOCK:
+                SCAN_JOBS[job_id] = {
+                    'ok': True,
+                    'job_id': job_id,
+                    'profile': profile,
+                    'status': 'queued',
+                    'stage': 'queued',
+                    'message': '任务已创建，准备开始',
+                    'created_at': time.time(),
+                    'updated_at': time.time(),
+                }
+
+            def progress(stage: str, message: str):
+                _update_job(job_id, status='running', stage=stage, message=message)
+
+            def worker():
+                try:
+                    progress('preparing', '正在准备扫描参数')
+                    df = run_wangji_scanner(cfg, profile, overrides=rules, progress_callback=progress)
+                    result = {
+                        'ok': True,
+                        'job_id': job_id,
+                        'profile': profile,
+                        'status': 'completed',
+                        'stage': 'done',
+                        'message': '候选生成完成',
+                        'summary': summarize_wangji_scanner_run(df, profile, rules),
+                        'report': build_wangji_scanner_report(df, profile, rules),
+                        'rows': df.fillna('').to_dict(orient='records'),
+                    }
+                    _update_job(job_id, **result)
+                except Exception as exc:
+                    _update_job(job_id, ok=False, status='failed', stage='failed', message=str(exc), error=str(exc))
+
+            threading.Thread(target=worker, daemon=True).start()
+            self._send_json({'ok': True, 'job_id': job_id, 'profile': profile, 'status': 'queued'})
         except Exception as exc:
             self._send_json({'ok': False, 'error': str(exc)}, status=500)
+
+    def _handle_wangji_scanner_status(self, parsed):
+        query = parse_qs(parsed.query)
+        job_id = (query.get('job_id') or [''])[0]
+        if not job_id:
+            self._send_json({'ok': False, 'error': 'missing job_id'}, status=400)
+            return
+        payload = _job_payload(job_id)
+        if not payload:
+            self._send_json({'ok': False, 'error': 'job not found'}, status=404)
+            return
+        self._send_json(payload)
 
     def _send_json(self, payload, status=200):
         content = json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8')
@@ -86,7 +151,8 @@ def main() -> None:
     handler = functools.partial(DashboardHandler, directory=str(ROOT))
     with ThreadingTCPServer((args.host, args.port), handler) as httpd:
         print(f'dashboard_url http://{args.host}:{args.port}/frontend/')
-        print(f'api_url http://{args.host}:{args.port}/api/wangji-scanner/run')
+        print(f'api_run_url http://{args.host}:{args.port}/api/wangji-scanner/run')
+        print(f'api_status_url http://{args.host}:{args.port}/api/wangji-scanner/status?job_id=<id>')
         print(f'serving_root {ROOT}')
         try:
             httpd.serve_forever()
