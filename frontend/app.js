@@ -5,6 +5,7 @@ const state = {
   currentReport: 'validation',
   currentScreeningScanner: 'model_scanner',
   currentWangjiProfile: 'strict',
+  customWangjiRuns: {},
   selectedInstrument: null,
   sortKey: '',
   sortDirection: 'desc',
@@ -15,6 +16,7 @@ const screeningSummary = document.getElementById('screeningSummary');
 const screeningTable = document.getElementById('screeningTable');
 const screeningReport = document.getElementById('screeningReport');
 const wangjiProfileTabs = document.getElementById('wangjiProfileTabs');
+const wangjiControls = document.getElementById('wangjiControls');
 const opsGrid = document.getElementById('opsGrid');
 const recentArchives = document.getElementById('recentArchives');
 const dataTable = document.getElementById('dataTable');
@@ -124,11 +126,84 @@ function renderSummary() {
   `).join('');
 }
 
+function defaultWangjiParams(profile) {
+  const rules = state.payload?.screeners?.wangji_scanner?.[profile]?.summary?.rules || {};
+  return {
+    setup_days: rules.setup_days ?? (profile === 'strict' ? 10 : 7),
+    close_range_max: rules.close_range_max ?? (profile === 'strict' ? 0.06 : 0.08),
+    max_daily_abs_ret_max: rules.max_daily_abs_ret_max ?? (profile === 'strict' ? 0.04 : 0.05),
+    breakout_ret_min: rules.breakout_ret_min ?? (profile === 'strict' ? 0.07 : 0.06),
+    vol_ratio_min: rules.vol_ratio_min ?? (profile === 'strict' ? 2.0 : 1.8),
+    pullback_daily_min: rules.pullback_daily_min ?? (profile === 'strict' ? -0.03 : -0.035),
+    pullback_ret_min: rules.pullback_ret_min ?? (profile === 'strict' ? -0.06 : -0.08),
+    pullback_avg_vol_ratio_max: rules.pullback_avg_vol_ratio_max ?? (profile === 'strict' ? 0.70 : 0.85),
+  };
+}
+
+function currentWangjiResult() {
+  const custom = state.customWangjiRuns[state.currentWangjiProfile];
+  if (custom) return custom;
+  const wangji = state.payload?.screeners?.wangji_scanner || {};
+  return wangji[state.currentWangjiProfile] || { rows: [], report: '', summary: {} };
+}
+
+async function runWangjiScannerFromControls() {
+  const params = {};
+  wangjiControls.querySelectorAll('[data-param-key]').forEach(input => {
+    params[input.dataset.paramKey] = input.value;
+  });
+  const statusNode = wangjiControls.querySelector('.wangji-controls-status');
+  if (statusNode) statusNode.textContent = '生成中…';
+  try {
+    const res = await fetch('/api/wangji-scanner/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: state.currentWangjiProfile, params }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    state.customWangjiRuns[state.currentWangjiProfile] = {
+      rows: data.rows || [],
+      report: data.report || '',
+      summary: data.summary || {},
+    };
+    if (statusNode) statusNode.textContent = `已生成：${data.summary?.passed ?? 0} 只通过 / ${data.summary?.total ?? 0} 只评估`;
+    renderScreening();
+  } catch (err) {
+    if (statusNode) statusNode.textContent = `生成失败：${err.message}`;
+  }
+}
+
+function renderWangjiControls() {
+  if (state.currentScreeningScanner !== 'wangji_scanner') {
+    wangjiControls.innerHTML = '';
+    return;
+  }
+  const params = defaultWangjiParams(state.currentWangjiProfile);
+  wangjiControls.innerHTML = `
+    <div class="wangji-controls-grid">
+      <label>整理天数<input data-param-key="setup_days" type="number" min="3" step="1" value="${escapeHtml(params.setup_days)}" /></label>
+      <label>整理振幅上限<input data-param-key="close_range_max" type="number" min="0.01" max="0.5" step="0.005" value="${escapeHtml(params.close_range_max)}" /></label>
+      <label>整理单日波动上限<input data-param-key="max_daily_abs_ret_max" type="number" min="0.01" max="0.3" step="0.005" value="${escapeHtml(params.max_daily_abs_ret_max)}" /></label>
+      <label>突破涨幅下限<input data-param-key="breakout_ret_min" type="number" min="0.01" max="0.3" step="0.005" value="${escapeHtml(params.breakout_ret_min)}" /></label>
+      <label>放量倍数下限<input data-param-key="vol_ratio_min" type="number" min="0.5" max="10" step="0.1" value="${escapeHtml(params.vol_ratio_min)}" /></label>
+      <label>单日回踩下限<input data-param-key="pullback_daily_min" type="number" min="-0.2" max="0" step="0.005" value="${escapeHtml(params.pullback_daily_min)}" /></label>
+      <label>三日回撤下限<input data-param-key="pullback_ret_min" type="number" min="-0.3" max="0" step="0.005" value="${escapeHtml(params.pullback_ret_min)}" /></label>
+      <label>回踩量比上限<input data-param-key="pullback_avg_vol_ratio_max" type="number" min="0.1" max="2" step="0.05" value="${escapeHtml(params.pullback_avg_vol_ratio_max)}" /></label>
+    </div>
+    <div class="wangji-controls-actions">
+      <button id="runWangjiScannerBtn">按当前参数生成候选</button>
+      <span class="wangji-controls-status">可调参数后点击生成</span>
+    </div>
+  `;
+  const btn = document.getElementById('runWangjiScannerBtn');
+  if (btn) btn.addEventListener('click', runWangjiScannerFromControls);
+}
+
 function screeningData() {
   const screeners = state.payload.screeners || {};
   if (state.currentScreeningScanner === 'wangji_scanner') {
-    const wangji = screeners.wangji_scanner || {};
-    const current = wangji[state.currentWangjiProfile] || { rows: [], report: '', summary: {} };
+    const current = currentWangjiResult();
     return {
       title: `wangji-scanner / ${state.currentWangjiProfile}`,
       rows: current.rows || [],
@@ -184,6 +259,7 @@ function renderScreening() {
     wangjiProfileTabs.innerHTML = '';
   }
 
+  renderWangjiControls();
   const current = screeningData();
   const summaryLines = [];
   if (state.currentScreeningScanner === 'wangji_scanner') {

@@ -123,6 +123,29 @@ input:disabled { opacity: 0.7; }
   color: white;
 }
 
+.wangji-controls {
+  margin-bottom: 12px;
+}
+
+.wangji-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.wangji-controls-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.wangji-controls-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .screening-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -413,7 +436,7 @@ pre {
 }
 
 @media (max-width: 1200px) {
-  .content-grid, .chart-grid, .ops-grid, .screening-summary { grid-template-columns: 1fr; }
+  .content-grid, .chart-grid, .ops-grid, .screening-summary, .wangji-controls-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {

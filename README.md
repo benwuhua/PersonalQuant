@@ -349,6 +349,7 @@ python scripts/run_wangji_sacnner.py
 - 模型初筛结果
 - wangji-scanner 结果
 - wangji-scanner 内部 strict / relax tab 切换
+- wangji-scanner 参数调节与按钮实时生成候选
 
 当前规则包含：
 - 周线 MA5 > MA13 > MA21

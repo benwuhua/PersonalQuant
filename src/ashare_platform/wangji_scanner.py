@@ -13,26 +13,42 @@ from .qlib_pipeline import fetch_csi300_constituents, fetch_recent_hist_for_code
 
 OUTPUT_SLUG = 'wangji-scanner'
 LEGACY_OUTPUT_SLUG = 'wangji-sacnner'
-PROFILE_CONFIGS: dict[str, dict[str, float]] = {
+PROFILE_CONFIGS: dict[str, dict[str, float | int]] = {
     'strict': {
-        'close_range_10_max': 0.06,
-        'max_daily_abs_ret_10_max': 0.04,
+        'setup_days': 10,
+        'pullback_days': 3,
+        'close_range_max': 0.06,
+        'max_daily_abs_ret_max': 0.04,
         'breakout_ret_min': 0.07,
-        'vol_ratio_5_min': 2.0,
+        'vol_ratio_lookback': 5,
+        'vol_ratio_min': 2.0,
         'pullback_daily_min': -0.03,
-        'pullback_ret_3d_min': -0.06,
+        'pullback_ret_min': -0.06,
         'pullback_avg_vol_ratio_max': 0.70,
     },
     'relax': {
-        'close_range_10_max': 0.08,
-        'max_daily_abs_ret_10_max': 0.05,
-        'breakout_ret_min': 0.05,
-        'vol_ratio_5_min': 1.5,
+        'setup_days': 7,
+        'pullback_days': 3,
+        'close_range_max': 0.08,
+        'max_daily_abs_ret_max': 0.05,
+        'breakout_ret_min': 0.06,
+        'vol_ratio_lookback': 5,
+        'vol_ratio_min': 1.8,
         'pullback_daily_min': -0.035,
-        'pullback_ret_3d_min': -0.08,
+        'pullback_ret_min': -0.08,
         'pullback_avg_vol_ratio_max': 0.85,
     },
 }
+FLOAT_RULE_KEYS = {
+    'close_range_max',
+    'max_daily_abs_ret_max',
+    'breakout_ret_min',
+    'vol_ratio_min',
+    'pullback_daily_min',
+    'pullback_ret_min',
+    'pullback_avg_vol_ratio_max',
+}
+INT_RULE_KEYS = {'setup_days', 'pullback_days', 'vol_ratio_lookback'}
 
 
 def _build_live_hist_panel(cfg: dict) -> pd.DataFrame:
@@ -97,9 +113,29 @@ def _safe_ratio(a: float, b: float) -> float | None:
     return float(a) / float(b)
 
 
-def _evaluate_instrument(daily: pd.DataFrame, weekly: pd.DataFrame, profile_name: str, rules: dict[str, float]) -> dict[str, Any] | None:
-    daily = daily.sort_values('datetime').tail(14).reset_index(drop=True)
-    if len(daily) < 14:
+def normalize_profile_rules(profile_name: str, overrides: dict[str, Any] | None = None) -> dict[str, float | int]:
+    if profile_name not in PROFILE_CONFIGS:
+        raise KeyError(f'unknown profile: {profile_name}')
+    rules: dict[str, float | int] = dict(PROFILE_CONFIGS[profile_name])
+    for key, value in (overrides or {}).items():
+        if value in {'', None} or key not in rules:
+            continue
+        if key in INT_RULE_KEYS:
+            rules[key] = int(value)
+        elif key in FLOAT_RULE_KEYS:
+            rules[key] = float(value)
+    rules['setup_days'] = max(3, int(rules['setup_days']))
+    rules['pullback_days'] = max(1, int(rules['pullback_days']))
+    rules['vol_ratio_lookback'] = max(1, min(int(rules['vol_ratio_lookback']), int(rules['setup_days'])))
+    return rules
+
+
+def _evaluate_instrument(daily: pd.DataFrame, weekly: pd.DataFrame, profile_name: str, rules: dict[str, float | int]) -> dict[str, Any] | None:
+    setup_days = int(rules['setup_days'])
+    pullback_days = int(rules['pullback_days'])
+    total_days = setup_days + 1 + pullback_days
+    daily = daily.sort_values('datetime').tail(total_days).reset_index(drop=True)
+    if len(daily) < total_days:
         return None
     weekly = weekly.sort_values('datetime').reset_index(drop=True)
     if len(weekly) < 24:
@@ -108,22 +144,27 @@ def _evaluate_instrument(daily: pd.DataFrame, weekly: pd.DataFrame, profile_name
     if len(weekly_valid) < 4:
         return None
 
-    d = {f'd{i + 1}': daily.iloc[i] for i in range(14)}
+    d = {f'd{i + 1}': daily.iloc[i] for i in range(total_days)}
+    breakout_idx = setup_days
+    breakout_label = f'd{breakout_idx + 1}'
+    breakout_prev_label = f'd{breakout_idx}'
+    latest_label = f'd{total_days}'
     w_prev1 = weekly_valid.iloc[-2]
     w_prev2 = weekly_valid.iloc[-3]
     w_prev3 = weekly_valid.iloc[-4]
 
-    close_window = daily.iloc[:10]['close']
-    daily_ret_window = daily.iloc[1:10]['close'].reset_index(drop=True) / daily.iloc[:9]['close'].reset_index(drop=True) - 1
-    volume_ref_5 = float(daily.iloc[5:10]['volume'].mean())
-    breakout_close = float(d['d11']['close'])
-    breakout_open = float(d['d11']['open'])
-    breakout_prev_close = float(d['d10']['close'])
-    breakout_volume = float(d['d11']['volume'])
-    pullback_closes = daily.iloc[11:14]['close'].reset_index(drop=True)
-    pullback_prev = daily.iloc[10:13]['close'].reset_index(drop=True)
+    close_window = daily.iloc[:setup_days]['close']
+    daily_ret_window = daily.iloc[1:setup_days]['close'].reset_index(drop=True) / daily.iloc[: setup_days - 1]['close'].reset_index(drop=True) - 1
+    vol_lookback = min(int(rules['vol_ratio_lookback']), setup_days)
+    volume_ref_5 = float(daily.iloc[setup_days - vol_lookback:setup_days]['volume'].mean())
+    breakout_close = float(d[breakout_label]['close'])
+    breakout_open = float(d[breakout_label]['open'])
+    breakout_prev_close = float(d[breakout_prev_label]['close'])
+    breakout_volume = float(d[breakout_label]['volume'])
+    pullback_closes = daily.iloc[breakout_idx + 1: breakout_idx + 1 + pullback_days]['close'].reset_index(drop=True)
+    pullback_prev = daily.iloc[breakout_idx: breakout_idx + pullback_days]['close'].reset_index(drop=True)
     pullback_daily_rets = pullback_closes / pullback_prev - 1
-    pullback_avg_vol = float(daily.iloc[11:14]['volume'].mean())
+    pullback_avg_vol = float(daily.iloc[breakout_idx + 1: breakout_idx + 1 + pullback_days]['volume'].mean())
 
     weekly_ma21_slope = _safe_ratio(float(w_prev1['ma21']), float(w_prev3['ma21']))
     if weekly_ma21_slope is not None:
@@ -133,7 +174,7 @@ def _evaluate_instrument(daily: pd.DataFrame, weekly: pd.DataFrame, profile_name
     max_daily_abs_ret_10 = float(daily_ret_window.abs().max()) if not daily_ret_window.empty else 0.0
     breakout_ret = float(breakout_close / breakout_prev_close - 1)
     vol_ratio_5 = _safe_ratio(breakout_volume, volume_ref_5)
-    pullback_ret_3d = float(float(d['d14']['close']) / breakout_close - 1)
+    pullback_ret_3d = float(float(d[latest_label]['close']) / breakout_close - 1)
     pullback_avg_vol_ratio = _safe_ratio(pullback_avg_vol, breakout_volume)
     resistance_close_10 = float(close_window.max())
 
@@ -144,17 +185,17 @@ def _evaluate_instrument(daily: pd.DataFrame, weekly: pd.DataFrame, profile_name
         and float(w_prev1['ma13']) >= float(w_prev2['ma13'])
         and float(w_prev1['ma21']) >= float(w_prev2['ma21'])
     )
-    rule_close_above_weekly_ma13 = bool(float(d['d14']['close']) >= float(w_prev1['ma13']))
+    rule_close_above_weekly_ma13 = bool(float(d[latest_label]['close']) >= float(w_prev1['ma13']))
 
-    rule_close_range_10 = close_range_10 <= rules['close_range_10_max']
-    rule_max_daily_abs_ret_10 = max_daily_abs_ret_10 <= rules['max_daily_abs_ret_10_max']
+    rule_close_range_10 = close_range_10 <= float(rules['close_range_max'])
+    rule_max_daily_abs_ret_10 = max_daily_abs_ret_10 <= float(rules['max_daily_abs_ret_max'])
     rule_breakout_green = breakout_close > breakout_open
-    rule_breakout_ret = breakout_ret >= rules['breakout_ret_min']
-    rule_breakout_volume = bool(vol_ratio_5 is not None and vol_ratio_5 >= rules['vol_ratio_5_min'])
+    rule_breakout_ret = breakout_ret >= float(rules['breakout_ret_min'])
+    rule_breakout_volume = bool(vol_ratio_5 is not None and vol_ratio_5 >= float(rules['vol_ratio_min']))
     rule_breakout_close = breakout_close > resistance_close_10
-    rule_pullback_daily = bool((pullback_daily_rets > rules['pullback_daily_min']).all())
-    rule_pullback_3d = pullback_ret_3d >= rules['pullback_ret_3d_min']
-    rule_pullback_volume = bool(pullback_avg_vol_ratio is not None and pullback_avg_vol_ratio <= rules['pullback_avg_vol_ratio_max'])
+    rule_pullback_daily = bool((pullback_daily_rets > float(rules['pullback_daily_min'])).all())
+    rule_pullback_3d = pullback_ret_3d >= float(rules['pullback_ret_min'])
+    rule_pullback_volume = bool(pullback_avg_vol_ratio is not None and pullback_avg_vol_ratio <= float(rules['pullback_avg_vol_ratio_max']))
 
     rule_map = {
         'rule_weekly_uptrend': rule_weekly_uptrend,
@@ -191,9 +232,9 @@ def _evaluate_instrument(daily: pd.DataFrame, weekly: pd.DataFrame, profile_name
     rules_passed_count = int(sum(1 for value in rule_map.values() if value))
 
     return {
-        'instrument': str(d['d14']['instrument']),
-        'signal_date': pd.Timestamp(d['d14']['datetime']).date().isoformat(),
-        'latest_close': float(d['d14']['close']),
+        'instrument': str(d[latest_label]['instrument']),
+        'signal_date': pd.Timestamp(d[latest_label]['datetime']).date().isoformat(),
+        'latest_close': float(d[latest_label]['close']),
         'scanner_name': 'wangji-scanner',
         'pattern_name': 'wangji-scanner',
         'pattern_profile': profile_name,
@@ -214,15 +255,19 @@ def _evaluate_instrument(daily: pd.DataFrame, weekly: pd.DataFrame, profile_name
     }
 
 
-def run_wangji_scanner(cfg: dict, profile_name: str, daily: pd.DataFrame | None = None) -> pd.DataFrame:
-    if profile_name not in PROFILE_CONFIGS:
-        raise KeyError(f'unknown profile: {profile_name}')
+def run_wangji_scanner(
+    cfg: dict,
+    profile_name: str,
+    daily: pd.DataFrame | None = None,
+    overrides: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    rules = normalize_profile_rules(profile_name, overrides)
     daily_panel = daily.copy() if daily is not None else _build_live_hist_panel(cfg)
     weekly = _build_weekly_panel(daily_panel)
     rows: list[dict[str, Any]] = []
     for instrument, group in daily_panel.groupby('instrument'):
         weekly_group = weekly[weekly['instrument'] == instrument].copy()
-        row = _evaluate_instrument(group.copy(), weekly_group, profile_name, PROFILE_CONFIGS[profile_name])
+        row = _evaluate_instrument(group.copy(), weekly_group, profile_name, rules)
         if row is not None:
             rows.append(row)
     if not rows:
@@ -241,7 +286,17 @@ def run_all_wangji_scanner_profiles(cfg: dict) -> dict[str, pd.DataFrame]:
     return {profile_name: run_wangji_scanner(cfg, profile_name, daily=daily) for profile_name in PROFILE_CONFIGS}
 
 
-def build_wangji_scanner_report(df: pd.DataFrame, profile_name: str) -> str:
+def summarize_wangji_scanner_run(df: pd.DataFrame, profile_name: str, rules: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        'profile': profile_name,
+        'rules': rules or normalize_profile_rules(profile_name),
+        'total': int(len(df)),
+        'passed': int(df['pattern_passed'].sum()) if not df.empty else 0,
+        'top_instruments': df.head(10)['instrument'].astype(str).tolist() if not df.empty else [],
+    }
+
+
+def build_wangji_scanner_report(df: pd.DataFrame, profile_name: str, rules: dict[str, Any] | None = None) -> str:
     lines = [f'# wangji-scanner / {profile_name}', '']
     if df.empty:
         lines.append('- no candidates generated')
@@ -272,14 +327,19 @@ def build_wangji_scanner_report(df: pd.DataFrame, profile_name: str) -> str:
     lines.append('')
     lines.append('## Rule Notes')
     lines.append('- weekly trend filter uses completed weekly MA5 > MA13 > MA21 and upward MA slope checks')
-    lines.append(f"- profile thresholds: {PROFILE_CONFIGS[profile_name]}")
-    lines.append('- daily structure uses 10-day tight close range + day11 breakout + day12-14 pullback volume contraction')
+    lines.append(f"- profile thresholds: {rules or normalize_profile_rules(profile_name)}")
+    lines.append('- daily structure uses setup-days tight close range + breakout day + pullback-days volume contraction')
     return '\n'.join(lines)
 
 
-def write_wangji_scanner_outputs(profile_frames: dict[str, pd.DataFrame], outputs_dir: Path) -> dict[str, dict[str, Path]]:
+def write_wangji_scanner_outputs(
+    profile_frames: dict[str, pd.DataFrame],
+    outputs_dir: Path,
+    profile_rules: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, dict[str, Path]]:
     ensure_dir(outputs_dir)
     output_paths: dict[str, dict[str, Path]] = {}
+    profile_rules = profile_rules or {profile_name: normalize_profile_rules(profile_name) for profile_name in profile_frames}
     for profile_name, df in profile_frames.items():
         slug = f'{OUTPUT_SLUG}_{profile_name}'
         csv_path = outputs_dir / f'{slug}_candidates.csv'
@@ -287,16 +347,12 @@ def write_wangji_scanner_outputs(profile_frames: dict[str, pd.DataFrame], output
         md_path = outputs_dir / f'{slug}_report.md'
         df.to_csv(csv_path, index=False)
         write_json(json_path, df.fillna('').to_dict(orient='records'))
-        md_path.write_text(build_wangji_scanner_report(df, profile_name), encoding='utf-8')
+        md_path.write_text(build_wangji_scanner_report(df, profile_name, profile_rules.get(profile_name)), encoding='utf-8')
         output_paths[profile_name] = {'csv_path': csv_path, 'json_path': json_path, 'md_path': md_path}
 
     summary_path = outputs_dir / f'{OUTPUT_SLUG}_summary.json'
     summary_payload = {
-        profile_name: {
-            'total': int(len(df)),
-            'passed': int(df['pattern_passed'].sum()) if not df.empty else 0,
-            'top_instruments': df.head(10)['instrument'].astype(str).tolist() if not df.empty else [],
-        }
+        profile_name: summarize_wangji_scanner_run(df, profile_name, profile_rules.get(profile_name))
         for profile_name, df in profile_frames.items()
     }
     write_json(summary_path, summary_payload)
