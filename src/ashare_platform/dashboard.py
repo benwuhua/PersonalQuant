@@ -111,6 +111,63 @@ def _build_ops_snapshot(
     }
 
 
+def _build_model_scanner(top30_candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    candidate_date = ''
+    candidate_source = ''
+    if top30_candidates:
+        candidate_date = str(top30_candidates[0].get('datetime', ''))
+        candidate_source = str(top30_candidates[0].get('candidate_source', ''))
+    lines = [
+        '# model-scanner',
+        '',
+        f'- total_candidates: {len(top30_candidates)}',
+        f'- candidate_source: {candidate_source or "n/a"}',
+        f'- candidate_date: {candidate_date or "n/a"}',
+        '',
+        '## Top Candidates',
+    ]
+    if not top30_candidates:
+        lines.append('- none')
+    else:
+        for row in top30_candidates[:15]:
+            lines.append(
+                f"- rank={row.get('rank', '')} | {row.get('instrument', '')} | score={row.get('score', '')} | source={row.get('candidate_source', '')}"
+            )
+    return {
+        'name': 'model-scanner',
+        'rows': top30_candidates,
+        'summary': {
+            'total': len(top30_candidates),
+            'candidate_source': candidate_source,
+            'candidate_date': candidate_date,
+            'top_instruments': [row.get('instrument', '') for row in top30_candidates[:10]],
+        },
+        'report': '\n'.join(lines),
+    }
+
+
+def _build_wangji_scanner_payload() -> dict[str, Any]:
+    summary = _read_json_object(OUTPUTS_DIR / 'wangji-scanner_summary.json')
+    strict_rows = _read_csv(OUTPUTS_DIR / 'wangji-scanner_strict_candidates.csv')
+    relax_rows = _read_csv(OUTPUTS_DIR / 'wangji-scanner_relax_candidates.csv')
+    strict_report = _read_text(OUTPUTS_DIR / 'wangji-scanner_strict_report.md')
+    relax_report = _read_text(OUTPUTS_DIR / 'wangji-scanner_relax_report.md')
+    return {
+        'name': 'wangji-scanner',
+        'summary': summary,
+        'strict': {
+            'rows': strict_rows,
+            'report': strict_report,
+            'summary': summary.get('strict', {}),
+        },
+        'relax': {
+            'rows': relax_rows,
+            'report': relax_report,
+            'summary': summary.get('relax', {}),
+        },
+    }
+
+
 def build_dashboard_payload() -> dict[str, Any]:
     priority_candidates = _read_csv(OUTPUTS_DIR / 'priority_candidates.csv')
     risk_candidates = _read_csv(OUTPUTS_DIR / 'risk_candidates.csv')
@@ -159,6 +216,12 @@ def build_dashboard_payload() -> dict[str, Any]:
     backtest_summary = _read_json_object(OUTPUTS_DIR / 'backtest_summary.json')
     archive_diff = _read_json_object(OUTPUTS_DIR / 'archive_diff.json')
     ops = _build_ops_snapshot(recent_archives, strategy_validation_summary, backtest_summary, archive_diff)
+
+    model_scanner = _build_model_scanner(top30_candidates)
+    wangji_scanner = _build_wangji_scanner_payload()
+    strict_summary = wangji_scanner.get('strict', {}).get('summary', {})
+    relax_summary = wangji_scanner.get('relax', {}).get('summary', {})
+
     summary = {
         'priority_count': len(priority_candidates),
         'risk_count': len(risk_candidates),
@@ -172,6 +235,9 @@ def build_dashboard_payload() -> dict[str, Any]:
         'timeline_count': len(timeline_map),
         'validation_days_compared': ops['validation_compare'].get('days_compared', 0),
         'latest_batch': ops['latest_archive'].get('batch_name', ''),
+        'model_scanner_count': model_scanner['summary'].get('total', 0),
+        'wangji_strict_passed': strict_summary.get('passed', 0),
+        'wangji_relax_passed': relax_summary.get('passed', 0),
     }
 
     return {
@@ -186,6 +252,10 @@ def build_dashboard_payload() -> dict[str, Any]:
         'backtest_summary': backtest_summary,
         'archive_diff': archive_diff,
         'ops': ops,
+        'screeners': {
+            'model_scanner': model_scanner,
+            'wangji_scanner': wangji_scanner,
+        },
         'daily_watchlist': _read_text(OUTPUTS_DIR / 'daily_watchlist.md'),
         'weekly_watchlist': _read_text(OUTPUTS_DIR / 'weekly_watchlist.md'),
         'risk_watchlist': _read_text(OUTPUTS_DIR / 'risk_watchlist.md'),

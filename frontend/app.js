@@ -3,12 +3,18 @@ const state = {
   currentView: 'priority',
   currentWatchlist: 'daily',
   currentReport: 'validation',
+  currentScreeningScanner: 'model_scanner',
+  currentWangjiProfile: 'strict',
   selectedInstrument: null,
   sortKey: '',
   sortDirection: 'desc',
 };
 
 const summaryGrid = document.getElementById('summaryGrid');
+const screeningSummary = document.getElementById('screeningSummary');
+const screeningTable = document.getElementById('screeningTable');
+const screeningReport = document.getElementById('screeningReport');
+const wangjiProfileTabs = document.getElementById('wangjiProfileTabs');
 const opsGrid = document.getElementById('opsGrid');
 const recentArchives = document.getElementById('recentArchives');
 const dataTable = document.getElementById('dataTable');
@@ -50,11 +56,6 @@ function num(value, digits = 4) {
   return Number.isFinite(n) ? n.toFixed(digits) : '0.0000';
 }
 
-function pct(value, digits = 2) {
-  if (value === null || value === undefined || value === '' || Number.isNaN(Number(value))) return 'n/a';
-  return `${(Number(value) * 100).toFixed(digits)}%`;
-}
-
 function metricValue(value, digits = 4) {
   if (value === null || value === undefined || value === '' || Number.isNaN(Number(value))) return 'n/a';
   return num(value, digits);
@@ -65,7 +66,7 @@ function isNumericValue(value) {
 }
 
 function readValue(row, path) {
-  return path.split('.').reduce((acc, part) => acc && acc[part] !== undefined ? acc[part] : '', row);
+  return path.split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : ''), row);
 }
 
 function clickableInstrument(row) {
@@ -92,6 +93,7 @@ async function loadPayload() {
   }
   statusText.textContent = '数据已加载';
   renderSummary();
+  renderScreening();
   renderOps();
   renderCharts();
   renderEventTypeOptions();
@@ -108,9 +110,9 @@ function renderSummary() {
     ['priority候选', summary.priority_count],
     ['风险候选', summary.risk_count],
     ['事件卡片', summary.event_card_count],
-    ['公告原文', summary.announcement_count],
-    ['PDF正文成功', summary.pdf_excerpt_count],
-    ['标题回退', summary.title_only_count],
+    ['模型初筛', summary.model_scanner_count],
+    ['王绩 strict', summary.wangji_strict_passed],
+    ['王绩 relax', summary.wangji_relax_passed],
     ['时间线文件', summary.timeline_count],
     ['验证已比较天数', summary.validation_days_compared],
   ];
@@ -122,13 +124,96 @@ function renderSummary() {
   `).join('');
 }
 
+function screeningData() {
+  const screeners = state.payload.screeners || {};
+  if (state.currentScreeningScanner === 'wangji_scanner') {
+    const wangji = screeners.wangji_scanner || {};
+    const current = wangji[state.currentWangjiProfile] || { rows: [], report: '', summary: {} };
+    return {
+      title: `wangji-scanner / ${state.currentWangjiProfile}`,
+      rows: current.rows || [],
+      report: current.report || '',
+      summary: current.summary || {},
+      columns: [
+        ['scanner_rank', 'Rank'],
+        ['instrument', '股票'],
+        ['pattern_passed', '通过'],
+        ['rules_passed_count', '规则命中'],
+        ['breakout_ret', '突破涨幅'],
+        ['vol_ratio_5', '放量倍数'],
+        ['pullback_ret_3d', '3日回撤'],
+        ['close_range_10', '10日振幅'],
+      ],
+      extractor: row => `${row.instrument} ${row.pattern_profile} ${row.breakout_ret}`,
+    };
+  }
+  const model = screeners.model_scanner || { rows: [], report: '', summary: {} };
+  return {
+    title: 'model-scanner',
+    rows: model.rows || [],
+    report: model.report || '',
+    summary: model.summary || {},
+    columns: [
+      ['rank', 'Rank'],
+      ['instrument', '股票'],
+      ['score', '模型分'],
+      ['candidate_source', '来源'],
+      ['datetime', '日期'],
+    ],
+    extractor: row => `${row.instrument} ${row.candidate_source} ${row.datetime}`,
+  };
+}
+
+function renderScreening() {
+  document.querySelectorAll('.screening-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.scanner === state.currentScreeningScanner);
+  });
+
+  if (state.currentScreeningScanner === 'wangji_scanner') {
+    wangjiProfileTabs.innerHTML = `
+      <button class="screening-subtab ${state.currentWangjiProfile === 'strict' ? 'active' : ''}" data-profile="strict">strict</button>
+      <button class="screening-subtab ${state.currentWangjiProfile === 'relax' ? 'active' : ''}" data-profile="relax">relax</button>
+    `;
+    wangjiProfileTabs.querySelectorAll('.screening-subtab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.currentWangjiProfile = btn.dataset.profile;
+        renderScreening();
+      });
+    });
+  } else {
+    wangjiProfileTabs.innerHTML = '';
+  }
+
+  const current = screeningData();
+  const summaryLines = [];
+  if (state.currentScreeningScanner === 'wangji_scanner') {
+    summaryLines.push(['总评估', current.summary.total || 0]);
+    summaryLines.push(['通过数', current.summary.passed || 0]);
+    summaryLines.push(['Top10', (current.summary.top_instruments || []).join(', ') || 'none']);
+  } else {
+    summaryLines.push(['总候选', current.summary.total || 0]);
+    summaryLines.push(['来源', current.summary.candidate_source || 'n/a']);
+    summaryLines.push(['日期', current.summary.candidate_date || 'n/a']);
+  }
+  screeningSummary.innerHTML = summaryLines.map(([label, value]) => `
+    <div class="screening-metric">
+      <h3>${label}</h3>
+      <div>${escapeHtml(value)}</div>
+    </div>
+  `).join('');
+
+  const head = `<thead><tr>${current.columns.map(([key, label]) => `<th>${escapeHtml(label)}</th>`).join('')}</tr></thead>`;
+  const body = `<tbody>${current.rows.slice(0, 20).map(row => `<tr>${current.columns.map(([key]) => `<td>${formatCell(readValue(row, key), key)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  screeningTable.innerHTML = head + body;
+  screeningReport.textContent = current.report || '';
+}
+
 function renderOps() {
   const ops = state.payload.ops || {};
   const compare = ops.validation_compare || {};
   const backtest = ops.backtest || {};
   const diff = ops.archive_diff || {};
   const latestArchive = ops.latest_archive || {};
-
   const cards = [
     {
       title: '前向验证',
@@ -159,18 +244,16 @@ function renderOps() {
       lines: [
         `latest batch：${escapeHtml(latestArchive.batch_name || 'n/a')}`,
         `archived at：${escapeHtml(latestArchive.archived_at || 'n/a')}`,
-        `outputs：priority / risk / validation / timeline`,
+        `outputs：priority / risk / wangji / validation / timeline`,
       ],
     },
   ];
-
   opsGrid.innerHTML = cards.map(card => `
     <div class="ops-card">
       <h3>${card.title}</h3>
       ${card.lines.map(line => `<div class="ops-line">${escapeHtml(line)}</div>`).join('')}
     </div>
   `).join('');
-
   const archives = state.payload.recent_archives || [];
   recentArchives.innerHTML = archives.map(item => `
     <div class="archive-item">
@@ -192,7 +275,6 @@ function renderDistributionChart() {
   const risk = state.payload.risk_candidates || [];
   const maxPriority = Math.max(...priority.map(x => Number(x.priority_score || 0)), 1);
   const maxRisk = Math.max(...risk.map(x => Number(x.risk_attention_score || 0)), 1);
-
   distributionChart.innerHTML = `
     <div class="legend"><span>Priority</span><span class="risk">Risk</span></div>
     <div class="chart-stack">
@@ -305,7 +387,6 @@ function renderDetailDrawer() {
   const announcements = detail.announcements || [];
   const cards = detail.event_cards || [];
   const timeline = detail.timeline || [];
-
   detailDrawer.innerHTML = `
     <div class="detail-section">
       <h3>${escapeHtml(detail.instrument)}</h3>
@@ -320,7 +401,6 @@ function renderDetailDrawer() {
         <span>top_risk: ${escapeHtml(risk.top_risk_event_type || '—')}</span>
       </div>
     </div>
-
     <div class="detail-section">
       <h3>事件卡</h3>
       ${cards.slice(0, 8).map(card => `
@@ -338,7 +418,6 @@ function renderDetailDrawer() {
         </div>
       `).join('') || '<p class="muted">暂无事件卡。</p>'}
     </div>
-
     <div class="detail-section">
       <h3>时间线</h3>
       ${timeline.slice(0, 8).map(item => `
@@ -354,7 +433,6 @@ function renderDetailDrawer() {
         </div>
       `).join('') || '<p class="muted">当前还没有这只票的归档时间线。</p>'}
     </div>
-
     <div class="detail-section">
       <h3>公告正文摘要</h3>
       ${announcements.slice(0, 5).map(item => `
@@ -419,7 +497,6 @@ function renderTable() {
   let rows = [];
   let columns = [];
   let extractor = () => '';
-
   if (state.currentView === 'priority') {
     tableTitle.textContent = '多头优先池';
     rows = payload.priority_candidates || [];
@@ -449,10 +526,8 @@ function renderTable() {
     ];
     extractor = row => `${row.instrument} ${row.priority?.top_event_title || ''} ${row.risk?.top_risk_title || ''}`;
   }
-
   rows = sortRows(applyFilters(rows, extractor));
   resultCount.textContent = `共 ${rows.length} 条`;
-
   const head = `<thead><tr>${columns.map(([key, label]) => {
     const active = state.sortKey === key;
     const indicator = active ? (state.sortDirection === 'asc' ? '▲' : '▼') : '';
@@ -464,7 +539,6 @@ function renderTable() {
     return `<tr class="is-clickable ${selected ? 'selected-row' : ''}" data-instrument="${escapeHtml(instrument)}">${columns.map(([key]) => `<td>${formatCell(readValue(row, key), key)}</td>`).join('')}</tr>`;
   }).join('')}</tbody>`;
   dataTable.innerHTML = head + body;
-
   dataTable.querySelectorAll('th[data-sort-key]').forEach(th => {
     th.addEventListener('click', () => {
       const key = th.dataset.sortKey;
@@ -477,7 +551,6 @@ function renderTable() {
       renderTable();
     });
   });
-
   dataTable.querySelectorAll('tbody tr[data-instrument]').forEach(tr => {
     tr.addEventListener('click', () => {
       state.selectedInstrument = tr.dataset.instrument;
@@ -489,7 +562,8 @@ function renderTable() {
 
 function formatCell(value, key) {
   if (key.toLowerCase().includes('bias')) return badge(value);
-  if (key.toLowerCase().includes('rank') || key === 'event_count') {
+  if (key === 'pattern_passed') return value ? '是' : '否';
+  if (key.toLowerCase().includes('rank') || key === 'event_count' || key === 'rules_passed_count') {
     const n = Number(value);
     return Number.isFinite(n) ? String(Math.round(n)) : escapeHtml(value);
   }
@@ -512,6 +586,13 @@ document.querySelectorAll('.report-tab').forEach(btn => {
   btn.addEventListener('click', () => {
     state.currentReport = btn.dataset.report;
     renderReport();
+  });
+});
+
+document.querySelectorAll('.screening-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.currentScreeningScanner = btn.dataset.scanner;
+    renderScreening();
   });
 });
 
@@ -538,5 +619,6 @@ loadPayload().catch(err => {
   statusText.textContent = '加载失败';
   tableTitle.textContent = '加载失败';
   dataTable.innerHTML = `<tbody><tr><td>${escapeHtml(err.message)}</td></tr></tbody>`;
+  screeningTable.innerHTML = `<tbody><tr><td>${escapeHtml(err.message)}</td></tr></tbody>`;
   detailDrawer.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
 });

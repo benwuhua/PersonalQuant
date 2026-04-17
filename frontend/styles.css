@@ -95,10 +95,58 @@ input:disabled { opacity: 0.7; }
   font-size: 30px;
 }
 
-.ops-panel {
+.screening-panel,
+.ops-panel,
+.charts-panel,
+.filter-panel,
+.main-panel,
+.side-column .panel {
   margin-top: 20px;
   padding: 18px;
 }
+
+.screening-tabs,
+.screening-subtabs,
+.report-tabs,
+.watchlist-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.screening-tab.active,
+.screening-subtab.active,
+.report-tab.active,
+.watchlist-tab.active {
+  border-color: var(--blue);
+  color: white;
+}
+
+.screening-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.screening-metric {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+.screening-metric h3 {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.screening-table-wrap {
+  max-height: 44vh;
+}
+
 .ops-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -145,10 +193,6 @@ input:disabled { opacity: 0.7; }
   color: var(--muted);
 }
 
-.charts-panel {
-  margin-top: 20px;
-  padding: 18px;
-}
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -213,7 +257,6 @@ input:disabled { opacity: 0.7; }
 .legend .pdf::before { background: var(--green); }
 .legend .fallback::before { background: var(--yellow); }
 
-.filter-panel { margin-top: 20px; padding: 16px; }
 .filter-row {
   display: grid;
   gap: 12px;
@@ -223,12 +266,10 @@ input:disabled { opacity: 0.7; }
 label { display: flex; flex-direction: column; gap: 8px; color: var(--muted); font-size: 13px; }
 
 .content-grid {
-  margin-top: 20px;
   display: grid;
   grid-template-columns: minmax(0, 2.1fr) minmax(360px, 1fr);
   gap: 20px;
 }
-.main-panel, .side-column .panel { padding: 18px; }
 .side-column { display: grid; gap: 20px; }
 .panel-header {
   display: flex;
@@ -361,15 +402,6 @@ tr.selected-row td:first-child { background: rgba(84,163,255,0.2); }
   white-space: pre-wrap;
   word-break: break-word;
 }
-.report-tabs, .watchlist-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.report-tab.active, .watchlist-tab.active {
-  border-color: var(--blue);
-  color: white;
-}
 pre {
   white-space: pre-wrap;
   word-break: break-word;
@@ -381,7 +413,7 @@ pre {
 }
 
 @media (max-width: 1200px) {
-  .content-grid, .chart-grid, .ops-grid { grid-template-columns: 1fr; }
+  .content-grid, .chart-grid, .ops-grid, .screening-summary { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {

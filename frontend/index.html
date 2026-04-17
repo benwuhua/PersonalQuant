@@ -12,7 +12,7 @@
       <div>
         <p class="eyebrow">个人 A 股投研操作台</p>
         <h1>量价候选 + 公告事件 + 风险观察 + 验证复盘</h1>
-        <p class="subtext">本地静态前端，读取 pipeline 输出，除了候选池和事件卡，还能直接查看前向验证、历史评估、批次 diff 和单票时间线。</p>
+        <p class="subtext">本地静态前端，读取 pipeline 输出。现在除了候选池和事件卡，还能看初筛板块：模型初筛 + wangji-scanner（strict / relax）。</p>
       </div>
       <div class="hero-actions">
         <button id="refreshBtn">刷新数据</button>
@@ -21,6 +21,23 @@
     </header>
 
     <section class="summary-grid" id="summaryGrid"></section>
+
+    <section class="panel screening-panel">
+      <div class="panel-header">
+        <h2>初筛板块</h2>
+        <span class="muted">同时看模型初筛和王绩形态扫描</span>
+      </div>
+      <div class="screening-tabs">
+        <button class="screening-tab active" data-scanner="model_scanner">模型初筛</button>
+        <button class="screening-tab" data-scanner="wangji_scanner">wangji-scanner</button>
+      </div>
+      <div id="wangjiProfileTabs" class="screening-subtabs"></div>
+      <div id="screeningSummary" class="screening-summary"></div>
+      <div class="table-wrap screening-table-wrap">
+        <table id="screeningTable"></table>
+      </div>
+      <pre id="screeningReport"></pre>
+    </section>
 
     <section class="panel ops-panel">
       <div class="panel-header">

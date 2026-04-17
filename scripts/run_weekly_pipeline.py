@@ -17,6 +17,7 @@ from ashare_platform.qlib_pipeline import FEATURE_COLS, build_feature_importance
 from ashare_platform.summarizer import summarize_announcement
 from ashare_platform.timeline import write_instrument_timeline
 from ashare_platform.validation import update_validation_artifacts
+from ashare_platform.wangji_scanner import run_all_wangji_scanner_profiles, write_wangji_scanner_outputs
 from ashare_platform.watchlist import build_watchlists
 
 
@@ -93,6 +94,13 @@ def main() -> None:
     validation_paths = update_validation_artifacts(validation_dir, outputs_dir, topk, priority_candidates, risk_candidates)
     print('validation_records_path', validation_paths['records_path'])
     print('validation_report_path', validation_paths['report_path'])
+
+    wangji_frames = run_all_wangji_scanner_profiles(cfg)
+    wangji_paths = write_wangji_scanner_outputs(wangji_frames, outputs_dir)
+    for profile_name, frame in wangji_frames.items():
+        print(f'wangji_scanner_{profile_name}_rows', len(frame))
+        print(f'wangji_scanner_{profile_name}_passed', int(frame['pattern_passed'].sum()) if not frame.empty else 0)
+        print(f'wangji_scanner_{profile_name}_report', wangji_paths[profile_name]['md_path'])
 
     archive_dir = archive_output_batch(outputs_dir, archives_dir)
     print('archive_dir', archive_dir)
