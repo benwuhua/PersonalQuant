@@ -3,7 +3,7 @@ CONFIG ?=
 PORT ?= 8765
 CLI = $(PYTHON) scripts/dev.py
 
-.PHONY: help init-config smoke run dashboard validate backtest archive-diff timeline cron-run serve clean-pyc
+.PHONY: help init-config smoke run dashboard validate backtest archive-diff timeline wangji-sacnner cron-run serve clean-pyc
 TICKER ?= SH600875
 LIMIT ?= 5
 
@@ -33,6 +33,9 @@ archive-diff:
 
 timeline:
 	@$(CLI) $(if $(CONFIG),--config $(CONFIG),) timeline $(TICKER) --limit $(LIMIT)
+
+wangji-sacnner:
+	@$(CLI) $(if $(CONFIG),--config $(CONFIG),) wangji-sacnner
 
 cron-run:
 	@$(CLI) $(if $(CONFIG),--config $(CONFIG),) cron-run

@@ -55,7 +55,8 @@ def cmd_smoke(args: argparse.Namespace) -> int:
         "import ashare_platform.announcements, ashare_platform.config, "
         "ashare_platform.dashboard, ashare_platform.io_utils, "
         "ashare_platform.priority, ashare_platform.qlib_pipeline, "
-        "ashare_platform.summarizer, ashare_platform.watchlist; "
+        "ashare_platform.summarizer, ashare_platform.watchlist, "
+        "ashare_platform.wangji_scanner; "
         "print('smoke ok')"
     )
     return _run([_python(), '-c', smoke_code], config=args.config)
@@ -83,6 +84,10 @@ def cmd_archive_diff(args: argparse.Namespace) -> int:
 
 def cmd_timeline(args: argparse.Namespace) -> int:
     return _run([_python(), 'scripts/build_instrument_timeline.py', args.instrument, '--limit', str(args.limit)], config=args.config)
+
+
+def cmd_wangji_sacnner(args: argparse.Namespace) -> int:
+    return _run([_python(), 'scripts/run_wangji_sacnner.py'], config=args.config)
 
 
 def cmd_cron_run(args: argparse.Namespace) -> int:
@@ -150,6 +155,9 @@ def build_parser() -> argparse.ArgumentParser:
     timeline_parser.add_argument('instrument')
     timeline_parser.add_argument('--limit', type=int, default=20)
     timeline_parser.set_defaults(func=cmd_timeline)
+
+    wangji_parser = subparsers.add_parser('wangji-sacnner', help='Run Wangji 14-day breakout-pullback pattern scanner')
+    wangji_parser.set_defaults(func=cmd_wangji_sacnner)
 
     cron_parser = subparsers.add_parser('cron-run', help='Run the full scheduled workflow wrapper with log capture')
     cron_parser.set_defaults(func=cmd_cron_run)

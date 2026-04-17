@@ -13,11 +13,13 @@ PersonalQuant 是一个面向个人研究场景的 A 股投研操作台。它不
 3. 每日 / 每周 / 风险观察清单
 4. 本地可视化前端仪表盘
 5. 前向验证 / 历史评估 / 批次 diff / 单票时间线
+6. wangji-sacnner 14日形态扫描器
 
 如果你想先看“跑出来到底长什么样”，先看：
 
 - `docs/sample_outputs.md`：样例输出说明
 - `docs/environment_setup.md`：环境准备说明
+- `docs/pattern_14d_breakout_pullback_spec.md`：14日整理-放量突破-缩量回踩 形态规则说明书
 
 ## Why it exists
 
@@ -232,6 +234,7 @@ python scripts/dev.py validate
 python scripts/dev.py backtest
 python scripts/dev.py archive-diff
 python scripts/dev.py timeline SH600875 --limit 5
+python scripts/dev.py wangji-sacnner
 python scripts/dev.py cron-run
 python scripts/dev.py serve --port 8765
 python scripts/dev.py clean-pyc
@@ -245,6 +248,7 @@ make init-config
 make smoke
 make run
 make dashboard
+make wangji-sacnner
 make cron-run
 make serve PORT=8765
 ```
@@ -312,6 +316,32 @@ python scripts/serve_dashboard.py
 - strategy validation / backtest / archive diff 报告切换
 - recent_archives 数据展示
 - 单票时间线展示
+
+## wangji-sacnner
+
+你刚刚定义的 14 日形态规则，已经做成了一个独立扫描器，按你的命名保留为：
+
+- `wangji-sacnner`
+
+入口：
+
+```bash
+python scripts/dev.py wangji-sacnner
+# 或
+python scripts/run_wangji_sacnner.py
+```
+
+输出文件：
+- `data/outputs/wangji-sacnner_candidates.csv`
+- `data/outputs/wangji-sacnner_candidates.json`
+- `data/outputs/wangji-sacnner_report.md`
+
+当前规则包含：
+- 周线 MA5 > MA13 > MA21
+- 周线均线整体向上
+- 日线前10日窄幅整理
+- 第11日放量突破
+- 第12-14日缩量回踩
 
 ## Scheduled workflow / cron
 
