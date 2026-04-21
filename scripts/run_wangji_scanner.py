@@ -1,4 +1,4 @@
-from run_wangji_sacnner import main
+from run_consolidation_breakout_scanner import main
 
 
 if __name__ == '__main__':

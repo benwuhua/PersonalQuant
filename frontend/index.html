@@ -12,7 +12,7 @@
       <div>
         <p class="eyebrow">个人 A 股投研操作台</p>
         <h1>量价候选 + 公告事件 + 风险观察 + 验证复盘</h1>
-        <p class="subtext">本地静态前端，读取 pipeline 输出。现在除了候选池和事件卡，还能看初筛板块：模型初筛 + wangji-scanner（strict / relax）。</p>
+        <p class="subtext">本地静态前端，读取 pipeline 输出。现在除了候选池和事件卡，还能看初筛板块：模型初筛 + 盘整突破扫描器（strict / relax）。</p>
       </div>
       <div class="hero-actions">
         <button id="refreshBtn">刷新数据</button>
@@ -29,10 +29,10 @@
       </div>
       <div class="screening-tabs">
         <button class="screening-tab active" data-scanner="model_scanner">模型初筛</button>
-        <button class="screening-tab" data-scanner="wangji_scanner">wangji-scanner</button>
+        <button class="screening-tab" data-scanner="consolidation_breakout_scanner">盘整突破扫描器</button>
       </div>
-      <div id="wangjiProfileTabs" class="screening-subtabs"></div>
-      <div id="wangjiControls" class="wangji-controls"></div>
+      <div id="consolidationBreakoutProfileTabs" class="screening-subtabs"></div>
+      <div id="consolidationBreakoutControls" class="consolidation-breakout-controls"></div>
       <div id="screeningSummary" class="screening-summary"></div>
       <div class="table-wrap screening-table-wrap">
         <table id="screeningTable"></table>
@@ -53,6 +53,14 @@
         </div>
         <div id="recentArchives"></div>
       </div>
+    </section>
+
+    <section class="panel multitask-panel">
+      <div class="panel-header">
+        <h2>多任务标签层</h2>
+        <span class="muted">把 return / excess_return / classification / risk / event 标签拆开看清楚</span>
+      </div>
+      <div id="multitaskLabelPanel"></div>
     </section>
 
     <section class="panel charts-panel">

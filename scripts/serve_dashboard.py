@@ -17,11 +17,11 @@ FRONTEND_DIR = ROOT / 'frontend'
 sys.path.insert(0, str(ROOT / 'src'))
 
 from ashare_platform.config import load_config  # noqa: E402
-from ashare_platform.wangji_scanner import (  # noqa: E402
-    build_wangji_scanner_report,
+from ashare_platform.consolidation_breakout_scanner import (  # noqa: E402
+    build_consolidation_breakout_scanner_report,
     normalize_profile_rules,
-    run_wangji_scanner,
-    summarize_wangji_scanner_run,
+    run_consolidation_breakout_scanner,
+    summarize_consolidation_breakout_scanner_run,
 )
 
 JOB_LOCK = threading.Lock()
@@ -45,6 +45,12 @@ def _update_job(job_id: str, **updates):
 
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
+        super().end_headers()
+
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path in {'/', ''}:
@@ -52,24 +58,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Location', '/frontend/')
             self.end_headers()
             return
-        if parsed.path == '/api/wangji-scanner/status':
-            self._handle_wangji_scanner_status(parsed)
+        if parsed.path in {'/api/consolidation-breakout-scanner/status', '/api/wangji-scanner/status'}:
+            self._handle_consolidation_breakout_scanner_status(parsed)
             return
         return super().do_GET()
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path == '/api/wangji-scanner/run':
-            self._handle_wangji_scanner_run(parsed)
+        if parsed.path in {'/api/consolidation-breakout-scanner/run', '/api/wangji-scanner/run'}:
+            self._handle_consolidation_breakout_scanner_run(parsed)
             return
         self.send_error(404, 'Not found')
 
-    def _handle_wangji_scanner_run(self, parsed):
+    def _handle_consolidation_breakout_scanner_run(self, parsed):
         try:
             length = int(self.headers.get('Content-Length', '0'))
             body = self.rfile.read(length) if length > 0 else b'{}'
             payload = json.loads(body.decode('utf-8') or '{}')
-            profile = str(payload.get('profile') or 'strict')
+            profile = str(payload.get('profile') or 'relax')
             params = payload.get('params') or {}
             cfg = load_config()
             rules = normalize_profile_rules(profile, params)
@@ -92,7 +98,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             def worker():
                 try:
                     progress('preparing', '正在准备扫描参数')
-                    df = run_wangji_scanner(cfg, profile, overrides=rules, progress_callback=progress)
+                    df = run_consolidation_breakout_scanner(cfg, profile, overrides=rules, progress_callback=progress)
                     result = {
                         'ok': True,
                         'job_id': job_id,
@@ -100,8 +106,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         'status': 'completed',
                         'stage': 'done',
                         'message': '候选生成完成',
-                        'summary': summarize_wangji_scanner_run(df, profile, rules),
-                        'report': build_wangji_scanner_report(df, profile, rules),
+                        'summary': summarize_consolidation_breakout_scanner_run(df, profile, rules),
+                        'report': build_consolidation_breakout_scanner_report(df, profile, rules),
                         'rows': df.fillna('').to_dict(orient='records'),
                     }
                     _update_job(job_id, **result)
@@ -109,11 +115,18 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     _update_job(job_id, ok=False, status='failed', stage='failed', message=str(exc), error=str(exc))
 
             threading.Thread(target=worker, daemon=True).start()
-            self._send_json({'ok': True, 'job_id': job_id, 'profile': profile, 'status': 'queued'})
+            self._send_json({
+                'ok': True,
+                'job_id': job_id,
+                'profile': profile,
+                'status': 'queued',
+                'message': '任务已创建，等待开始…',
+                'status_url': f'/api/consolidation-breakout-scanner/status?job_id={job_id}',
+            })
         except Exception as exc:
             self._send_json({'ok': False, 'error': str(exc)}, status=500)
 
-    def _handle_wangji_scanner_status(self, parsed):
+    def _handle_consolidation_breakout_scanner_status(self, parsed):
         query = parse_qs(parsed.query)
         job_id = (query.get('job_id') or [''])[0]
         if not job_id:
@@ -151,8 +164,8 @@ def main() -> None:
     handler = functools.partial(DashboardHandler, directory=str(ROOT))
     with ThreadingTCPServer((args.host, args.port), handler) as httpd:
         print(f'dashboard_url http://{args.host}:{args.port}/frontend/')
-        print(f'api_run_url http://{args.host}:{args.port}/api/wangji-scanner/run')
-        print(f'api_status_url http://{args.host}:{args.port}/api/wangji-scanner/status?job_id=<id>')
+        print(f'api_run_url http://{args.host}:{args.port}/api/consolidation-breakout-scanner/run')
+        print(f'api_status_url http://{args.host}:{args.port}/api/consolidation-breakout-scanner/status?job_id=<id>')
         print(f'serving_root {ROOT}')
         try:
             httpd.serve_forever()

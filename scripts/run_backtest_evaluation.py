@@ -18,7 +18,7 @@ def main() -> None:
     outputs_dir = ensure_dir(ROOT / cfg['paths']['outputs_dir'])
     processed_dir = ensure_dir(ROOT / cfg['paths']['processed_dir'])
     init_qlib(cfg['qlib']['provider_uri'], cfg['qlib']['region'])
-    model, train, valid, score = build_training_artifacts(cfg)
+    model, train, valid, score, _ = build_training_artifacts(cfg)
     scored = score.copy()
     scored['score'] = model.predict(scored[FEATURE_COLS])
     paths = run_backtest_evaluation(scored, outputs_dir, processed_dir, top_k=int(cfg['qlib'].get('top_k', 30)))

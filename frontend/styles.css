@@ -97,6 +97,7 @@ input:disabled { opacity: 0.7; }
 
 .screening-panel,
 .ops-panel,
+.multitask-panel,
 .charts-panel,
 .filter-panel,
 .main-panel,
@@ -123,31 +124,31 @@ input:disabled { opacity: 0.7; }
   color: white;
 }
 
-.wangji-controls {
+.consolidation-breakout-controls {
   margin-bottom: 12px;
 }
 
-.wangji-controls-grid {
+.consolidation-breakout-controls-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
 
-.wangji-controls-actions {
+.consolidation-breakout-controls-actions {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
 }
 
-.wangji-controls-status {
+.consolidation-breakout-controls-status {
   color: var(--muted);
   font-size: 13px;
 }
 
-.wangji-controls-grid.is-busy,
-.wangji-controls-actions.is-busy {
+.consolidation-breakout-controls-grid.is-busy,
+.consolidation-breakout-controls-actions.is-busy {
   opacity: 0.92;
 }
 
@@ -226,6 +227,119 @@ select:disabled {
 }
 .archive-item span {
   color: var(--muted);
+}
+
+.multitask-summary-grid,
+.multitask-groups-grid,
+.multitask-linkage-grid,
+.multitask-status-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.multitask-summary-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.multitask-groups-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.multitask-linkage-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.multitask-status-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.multitask-chip,
+.multitask-group-card,
+.multitask-linkage-card,
+.multitask-linkage-item,
+.multitask-status-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255,255,255,0.02);
+}
+
+.multitask-chip span,
+.multitask-group-card h3,
+.multitask-group-ids,
+.multitask-linkage-item span,
+.multitask-linkage-objective,
+.multitask-status-card span {
+  color: var(--muted);
+}
+
+.multitask-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.multitask-chip strong {
+  font-size: 24px;
+}
+
+.multitask-group-card h3 {
+  margin-bottom: 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.multitask-group-count {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.multitask-group-ids {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.multitask-linkage-card {
+  margin-top: 14px;
+}
+
+.multitask-linkage-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.multitask-linkage-item strong {
+  font-size: 18px;
+}
+
+.multitask-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.multitask-status-card strong {
+  font-size: 22px;
+}
+
+.multitask-linkage-objective {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.multitask-table-wrap {
+  margin-top: 14px;
+  max-height: 36vh;
+}
+
+.multitask-table td,
+.multitask-table th {
+  font-size: 12px;
 }
 
 .chart-grid {
@@ -448,7 +562,15 @@ pre {
 }
 
 @media (max-width: 1200px) {
-  .content-grid, .chart-grid, .ops-grid, .screening-summary, .wangji-controls-grid { grid-template-columns: 1fr; }
+  .content-grid,
+  .chart-grid,
+  .ops-grid,
+  .screening-summary,
+  .consolidation-breakout-controls-grid,
+  .multitask-summary-grid,
+  .multitask-groups-grid,
+  .multitask-linkage-grid,
+  .multitask-status-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {

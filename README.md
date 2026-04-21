@@ -13,7 +13,7 @@ PersonalQuant 是一个面向个人研究场景的 A 股投研操作台。它不
 3. 每日 / 每周 / 风险观察清单
 4. 本地可视化前端仪表盘
 5. 前向验证 / 历史评估 / 批次 diff / 单票时间线
-6. wangji-scanner 14日形态扫描器（strict / relax）
+6. consolidation-breakout-scanner 14日盘整突破扫描器（relax）
 
 如果你想先看“跑出来到底长什么样”，先看：
 
@@ -234,10 +234,14 @@ python scripts/dev.py validate
 python scripts/dev.py backtest
 python scripts/dev.py archive-diff
 python scripts/dev.py timeline SH600875 --limit 5
+python scripts/dev.py consolidation-breakout-scanner
+python scripts/dev.py quant-pipeline
+# 兼容旧命令
 python scripts/dev.py wangji-scanner
 python scripts/dev.py cron-run
 python scripts/dev.py serve --port 8765
 python scripts/dev.py clean-pyc
+
 ```
 
 如果你更喜欢短命令，也可以继续用 Makefile：
@@ -317,39 +321,45 @@ python scripts/serve_dashboard.py
 - recent_archives 数据展示
 - 单票时间线展示
 
-## wangji-scanner
+## consolidation-breakout-scanner
 
 你刚刚定义的 14 日形态规则，已经做成了一个独立扫描器：
 
-- `wangji-scanner`
+- `consolidation-breakout-scanner`
 
 入口：
 
 ```bash
-python scripts/dev.py wangji-scanner
+python scripts/dev.py consolidation-breakout-scanner
 # 或
-python scripts/run_wangji_scanner.py
+python scripts/run_consolidation_breakout_scanner.py
 ```
 
 兼容旧别名：
 
 ```bash
+python scripts/dev.py wangji-scanner
 python scripts/dev.py wangji-sacnner
+python scripts/run_consolidation_breakout_scanner.py
+python scripts/run_wangji_scanner.py
 python scripts/run_wangji_sacnner.py
 ```
 
 输出文件：
-- `data/outputs/wangji-scanner_strict_candidates.csv`
-- `data/outputs/wangji-scanner_strict_report.md`
-- `data/outputs/wangji-scanner_relax_candidates.csv`
-- `data/outputs/wangji-scanner_relax_report.md`
-- `data/outputs/wangji-scanner_summary.json`
+- `data/outputs/consolidation-breakout-scanner_relax_candidates.csv`
+- `data/outputs/consolidation-breakout-scanner_relax_report.md`
+- `data/outputs/consolidation-breakout-scanner_summary.json`
+
+当前盘整突破 live 扫描池默认使用 `live_data.consolidation_breakout_universe`。现在默认已扩大为 `all_a`，但不会直接全量逐票拉历史，而是先用 `live_data.consolidation_breakout_prefilter_mode: turnover_top_n` 按当日成交额做预筛，再对前 `live_data.consolidation_breakout_prefilter_top_n` 只股票跑扫描。默认值是 1200；如需缩回沪深300，可改成 `csi300`；如需真全量，可把 `consolidation_breakout_prefilter_mode` 设为 `none`。也可用 `live_data.consolidation_breakout_extra_codes` 追加指定股票。旧的 wangji_* 配置键仍兼容。
+
+LightGBM 训练 universe 已默认从 `csi300` 扩到 `all`（Qlib 全A可用池）；当前 live 模型候选池仍保持 `akshare_live_csi300`，也就是“训练更大、实盘打分仍先在沪深300里跑”。
+
+成交额预筛会把结果缓存到 `data/outputs/consolidation_breakout_turnover_cache.json`。平时 `python scripts/dev.py consolidation-breakout-scanner` 会优先尝试实时刷新；若快照接口失败，则自动回退到最近一次缓存；若缓存也没有，再退回 csi300 兜底。也可以手动执行 `python scripts/dev.py consolidation-breakout-refresh-cache` 单独刷新缓存。旧的 `wangji_turnover_cache.json` 仍会同步写出以兼容历史流程。
 
 前端现在也新增了“初筛板块”，同时展示：
 - 模型初筛结果
-- wangji-scanner 结果
-- wangji-scanner 内部 strict / relax tab 切换
-- wangji-scanner 参数调节与按钮实时生成候选
+- consolidation-breakout-scanner 结果
+- consolidation-breakout-scanner relax 参数调节与按钮实时生成候选
 
 当前规则包含：
 - 周线 MA5 > MA13 > MA21

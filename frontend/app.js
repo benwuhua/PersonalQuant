@@ -4,9 +4,9 @@ const state = {
   currentWatchlist: 'daily',
   currentReport: 'validation',
   currentScreeningScanner: 'model_scanner',
-  currentWangjiProfile: 'strict',
-  customWangjiRuns: {},
-  wangjiJob: null,
+  currentConsolidationBreakoutProfile: 'strict',
+  customConsolidationBreakoutRuns: {},
+  consolidationBreakoutJob: null,
   selectedInstrument: null,
   sortKey: '',
   sortDirection: 'desc',
@@ -16,10 +16,11 @@ const summaryGrid = document.getElementById('summaryGrid');
 const screeningSummary = document.getElementById('screeningSummary');
 const screeningTable = document.getElementById('screeningTable');
 const screeningReport = document.getElementById('screeningReport');
-const wangjiProfileTabs = document.getElementById('wangjiProfileTabs');
-const wangjiControls = document.getElementById('wangjiControls');
+const consolidationBreakoutProfileTabs = document.getElementById('consolidationBreakoutProfileTabs');
+const consolidationBreakoutControls = document.getElementById('consolidationBreakoutControls');
 const opsGrid = document.getElementById('opsGrid');
 const recentArchives = document.getElementById('recentArchives');
+const multitaskLabelPanel = document.getElementById('multitaskLabelPanel');
 const dataTable = document.getElementById('dataTable');
 const tableTitle = document.getElementById('tableTitle');
 const resultCount = document.getElementById('resultCount');
@@ -98,6 +99,7 @@ async function loadPayload() {
   renderSummary();
   renderScreening();
   renderOps();
+  renderMultitaskLabelPanel();
   renderCharts();
   renderEventTypeOptions();
   renderHighlights();
@@ -114,8 +116,12 @@ function renderSummary() {
     ['风险候选', summary.risk_count],
     ['事件卡片', summary.event_card_count],
     ['模型初筛', summary.model_scanner_count],
-    ['王绩 strict', summary.wangji_strict_passed],
-    ['王绩 relax', summary.wangji_relax_passed],
+    ['盘整突破 relax', summary.wangji_relax_passed],
+    ['多任务标签数', summary.multitask_task_count],
+    ['主标签 horizon', summary.label_primary_horizon ? `${summary.label_primary_horizon}D` : 'n/a'],
+    ['收益 horizons', summary.label_return_horizons || 'n/a'],
+    ['事件 windows', summary.label_event_windows || 'n/a'],
+    ['hit / risk 阈值', `${metricValue(summary.label_hit_threshold, 2)} / ${metricValue(summary.label_risk_threshold, 2)}`],
     ['时间线文件', summary.timeline_count],
     ['验证已比较天数', summary.validation_days_compared],
   ];
@@ -127,7 +133,7 @@ function renderSummary() {
   `).join('');
 }
 
-function defaultWangjiParams(profile) {
+function defaultConsolidationBreakoutParams(profile) {
   const rules = state.payload?.screeners?.wangji_scanner?.[profile]?.summary?.rules || {};
   return {
     setup_days: rules.setup_days ?? (profile === 'strict' ? 10 : 7),
@@ -141,28 +147,28 @@ function defaultWangjiParams(profile) {
   };
 }
 
-function currentWangjiResult() {
-  const custom = state.customWangjiRuns[state.currentWangjiProfile];
+function currentConsolidationBreakoutResult() {
+  const custom = state.customConsolidationBreakoutRuns[state.currentConsolidationBreakoutProfile];
   if (custom) return custom;
   const wangji = state.payload?.screeners?.wangji_scanner || {};
-  return wangji[state.currentWangjiProfile] || { rows: [], report: '', summary: {} };
+  return wangji[state.currentConsolidationBreakoutProfile] || { rows: [], report: '', summary: {} };
 }
 
-function setWangjiInteractiveEnabled(enabled) {
+function setConsolidationBreakoutInteractiveEnabled(enabled) {
   document.querySelectorAll('.screening-tab, .screening-subtab').forEach(el => {
     el.disabled = !enabled;
   });
-  wangjiControls.querySelectorAll('input, button').forEach(el => {
+  consolidationBreakoutControls.querySelectorAll('input, button').forEach(el => {
     el.disabled = !enabled;
   });
 }
 
-async function pollWangjiJob(jobId) {
-  while (state.wangjiJob && state.wangjiJob.jobId === jobId) {
-    const res = await fetch(`/api/wangji-scanner/status?job_id=${encodeURIComponent(jobId)}`);
+async function pollConsolidationBreakoutJob(jobId) {
+  while (state.consolidationBreakoutJob && state.consolidationBreakoutJob.jobId === jobId) {
+    const res = await fetch(`/api/consolidation-breakout-scanner/status?job_id=${encodeURIComponent(jobId)}`);
     const data = await res.json();
     if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
-    state.wangjiJob = {
+    state.consolidationBreakoutJob = {
       jobId,
       status: data.status,
       stage: data.stage,
@@ -170,12 +176,12 @@ async function pollWangjiJob(jobId) {
     };
     renderScreening();
     if (data.status === 'completed') {
-      state.customWangjiRuns[state.currentWangjiProfile] = {
+      state.customConsolidationBreakoutRuns[state.currentConsolidationBreakoutProfile] = {
         rows: data.rows || [],
         report: data.report || '',
         summary: data.summary || {},
       };
-      state.wangjiJob = null;
+      state.consolidationBreakoutJob = null;
       renderScreening();
       return;
     }
@@ -186,40 +192,40 @@ async function pollWangjiJob(jobId) {
   }
 }
 
-async function runWangjiScannerFromControls() {
+async function runConsolidationBreakoutScannerFromControls() {
   const params = {};
-  wangjiControls.querySelectorAll('[data-param-key]').forEach(input => {
+  consolidationBreakoutControls.querySelectorAll('[data-param-key]').forEach(input => {
     params[input.dataset.paramKey] = input.value;
   });
   try {
-    state.wangjiJob = { jobId: null, status: 'starting', stage: 'starting', message: '正在提交任务…' };
+    state.consolidationBreakoutJob = { jobId: null, status: 'starting', stage: 'starting', message: '正在提交任务…' };
     renderScreening();
-    const res = await fetch('/api/wangji-scanner/run', {
+    const res = await fetch('/api/consolidation-breakout-scanner/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profile: state.currentWangjiProfile, params }),
+      body: JSON.stringify({ profile: state.currentConsolidationBreakoutProfile, params }),
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    state.wangjiJob = { jobId: data.job_id, status: data.status, stage: 'queued', message: '任务已创建，等待开始…' };
+    state.consolidationBreakoutJob = { jobId: data.job_id, status: data.status, stage: 'queued', message: '任务已创建，等待开始…' };
     renderScreening();
-    await pollWangjiJob(data.job_id);
+    await pollConsolidationBreakoutJob(data.job_id);
   } catch (err) {
-    state.wangjiJob = { jobId: null, status: 'failed', stage: 'failed', message: `生成失败：${err.message}` };
+    state.consolidationBreakoutJob = { jobId: null, status: 'failed', stage: 'failed', message: `生成失败：${err.message}` };
     renderScreening();
   }
 }
 
-function renderWangjiControls() {
-  if (state.currentScreeningScanner !== 'wangji_scanner') {
-    wangjiControls.innerHTML = '';
+function renderConsolidationBreakoutControls() {
+  if (state.currentScreeningScanner !== 'consolidation_breakout_scanner') {
+    consolidationBreakoutControls.innerHTML = '';
     return;
   }
-  const params = defaultWangjiParams(state.currentWangjiProfile);
-  const busy = Boolean(state.wangjiJob && ['starting', 'queued', 'running'].includes(state.wangjiJob.status));
-  const statusText = state.wangjiJob?.message || '可调参数后点击生成';
-  wangjiControls.innerHTML = `
-    <div class="wangji-controls-grid ${busy ? 'is-busy' : ''}">
+  const params = defaultConsolidationBreakoutParams(state.currentConsolidationBreakoutProfile);
+  const busy = Boolean(state.consolidationBreakoutJob && ['starting', 'queued', 'running'].includes(state.consolidationBreakoutJob.status));
+  const statusText = state.consolidationBreakoutJob?.message || '可调参数后点击生成';
+  consolidationBreakoutControls.innerHTML = `
+    <div class="consolidation-breakout-controls-grid ${busy ? 'is-busy' : ''}">
       <label>整理天数<input data-param-key="setup_days" type="number" min="3" step="1" value="${escapeHtml(params.setup_days)}" /></label>
       <label>整理振幅上限<input data-param-key="close_range_max" type="number" min="0.01" max="0.5" step="0.005" value="${escapeHtml(params.close_range_max)}" /></label>
       <label>整理单日波动上限<input data-param-key="max_daily_abs_ret_max" type="number" min="0.01" max="0.3" step="0.005" value="${escapeHtml(params.max_daily_abs_ret_max)}" /></label>
@@ -229,22 +235,22 @@ function renderWangjiControls() {
       <label>三日回撤下限<input data-param-key="pullback_ret_min" type="number" min="-0.3" max="0" step="0.005" value="${escapeHtml(params.pullback_ret_min)}" /></label>
       <label>回踩量比上限<input data-param-key="pullback_avg_vol_ratio_max" type="number" min="0.1" max="2" step="0.05" value="${escapeHtml(params.pullback_avg_vol_ratio_max)}" /></label>
     </div>
-    <div class="wangji-controls-actions ${busy ? 'is-busy' : ''}">
-      <button id="runWangjiScannerBtn">${busy ? '生成中…' : '按当前参数生成候选'}</button>
-      <span class="wangji-controls-status">${escapeHtml(statusText)}</span>
+    <div class="consolidation-breakout-controls-actions ${busy ? 'is-busy' : ''}">
+      <button id="runConsolidationBreakoutScannerBtn">${busy ? '生成中…' : '按当前参数生成候选'}</button>
+      <span class="consolidation-breakout-controls-status">${escapeHtml(statusText)}</span>
     </div>
   `;
-  const btn = document.getElementById('runWangjiScannerBtn');
-  if (btn) btn.addEventListener('click', runWangjiScannerFromControls);
-  setWangjiInteractiveEnabled(!busy);
+  const btn = document.getElementById('runConsolidationBreakoutScannerBtn');
+  if (btn) btn.addEventListener('click', runConsolidationBreakoutScannerFromControls);
+  setConsolidationBreakoutInteractiveEnabled(!busy);
 }
 
 function screeningData() {
   const screeners = state.payload.screeners || {};
-  if (state.currentScreeningScanner === 'wangji_scanner') {
-    const current = currentWangjiResult();
+  if (state.currentScreeningScanner === 'consolidation_breakout_scanner') {
+    const current = currentConsolidationBreakoutResult();
     return {
-      title: `wangji-scanner / ${state.currentWangjiProfile}`,
+      title: `consolidation-breakout-scanner / ${state.currentConsolidationBreakoutProfile}`,
       rows: current.rows || [],
       report: current.report || '',
       summary: current.summary || {},
@@ -283,25 +289,25 @@ function renderScreening() {
     btn.classList.toggle('active', btn.dataset.scanner === state.currentScreeningScanner);
   });
 
-  if (state.currentScreeningScanner === 'wangji_scanner') {
-    wangjiProfileTabs.innerHTML = `
-      <button class="screening-subtab ${state.currentWangjiProfile === 'strict' ? 'active' : ''}" data-profile="strict">strict</button>
-      <button class="screening-subtab ${state.currentWangjiProfile === 'relax' ? 'active' : ''}" data-profile="relax">relax</button>
+  if (state.currentScreeningScanner === 'consolidation_breakout_scanner') {
+    consolidationBreakoutProfileTabs.innerHTML = `
+      <button class="screening-subtab ${state.currentConsolidationBreakoutProfile === 'strict' ? 'active' : ''}" data-profile="strict">strict</button>
+      <button class="screening-subtab ${state.currentConsolidationBreakoutProfile === 'relax' ? 'active' : ''}" data-profile="relax">relax</button>
     `;
-    wangjiProfileTabs.querySelectorAll('.screening-subtab').forEach(btn => {
+    consolidationBreakoutProfileTabs.querySelectorAll('.screening-subtab').forEach(btn => {
       btn.addEventListener('click', () => {
-        state.currentWangjiProfile = btn.dataset.profile;
+        state.currentConsolidationBreakoutProfile = btn.dataset.profile;
         renderScreening();
       });
     });
   } else {
-    wangjiProfileTabs.innerHTML = '';
+    consolidationBreakoutProfileTabs.innerHTML = '';
   }
 
-  renderWangjiControls();
+  renderConsolidationBreakoutControls();
   const current = screeningData();
   const summaryLines = [];
-  if (state.currentScreeningScanner === 'wangji_scanner') {
+  if (state.currentScreeningScanner === 'consolidation_breakout_scanner') {
     summaryLines.push(['总评估', current.summary.total || 0]);
     summaryLines.push(['通过数', current.summary.passed || 0]);
     summaryLines.push(['Top10', (current.summary.top_instruments || []).join(', ') || 'none']);
@@ -359,7 +365,7 @@ function renderOps() {
       lines: [
         `latest batch：${escapeHtml(latestArchive.batch_name || 'n/a')}`,
         `archived at：${escapeHtml(latestArchive.archived_at || 'n/a')}`,
-        `outputs：priority / risk / wangji / validation / timeline`,
+        `outputs：priority / risk / consolidation-breakout / validation / timeline`,
       ],
     },
   ];
@@ -376,6 +382,109 @@ function renderOps() {
       <span>${escapeHtml(item.archived_at || '')}</span>
     </div>
   `).join('') || '<p class="muted">暂无归档。</p>';
+}
+
+function renderMultitaskLabelPanel() {
+  const spec = state.payload.multitask_label_spec || {};
+  const overview = state.payload.multitask_label_overview || {};
+  const linkage = state.payload.multitask_training_linkage || {};
+  const statusView = state.payload.multitask_task_status || {};
+  const groupCounts = overview.group_counts || {};
+  const taskRows = statusView.task_rows || overview.task_rows || [];
+  const groupOrder = ['return', 'excess_return', 'classification', 'risk', 'event'];
+  const summaryChips = [
+    ['主 horizon', spec.primary_horizon ? `${spec.primary_horizon}D` : 'n/a'],
+    ['return horizons', (spec.return_horizons || []).join(' / ') || 'n/a'],
+    ['event windows', (spec.event_windows || []).join(' / ') || 'n/a'],
+    ['hit threshold', metricValue(spec.hit_threshold, 2)],
+    ['risk threshold', metricValue(spec.risk_threshold, 2)],
+    ['任务总数', overview.task_count || 0],
+  ];
+  const linkageItems = [
+    ['训练主任务', linkage.training_task_id || 'n/a'],
+    ['训练 label_key', linkage.training_label_key || 'n/a'],
+    ['验证指标', linkage.validation_metric_name || 'n/a'],
+    ['验证 label_key', linkage.validation_metric_label_key || 'n/a'],
+    ['fold_count', linkage.fold_count ?? 0],
+    ['rank_ic_mean', metricValue(linkage.rank_ic_mean)],
+    ['topk_avg_label_mean', metricValue(linkage.topk_avg_label_mean)],
+  ];
+  const statusCounts = statusView.status_counts || {};
+  const statusItems = [
+    ['主训练任务', statusCounts.training_primary ?? 0],
+    ['已算出未入训练', statusCounts.data_ready_not_training ?? 0],
+    ['辅助/诊断任务', statusCounts.auxiliary_diagnostic ?? 0],
+  ];
+  multitaskLabelPanel.innerHTML = `
+    <div class="multitask-summary-grid">
+      ${summaryChips.map(([label, value]) => `
+        <div class="multitask-chip">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `).join('')}
+    </div>
+    <div class="multitask-linkage-card">
+      <div class="panel-header compact">
+        <h3>当前训练/验证联动</h3>
+        <span class="muted">把主训练标签和 walk-forward 评估指标直接对上</span>
+      </div>
+      <div class="multitask-linkage-grid">
+        ${linkageItems.map(([label, value]) => `
+          <div class="multitask-linkage-item">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+          </div>
+        `).join('')}
+      </div>
+      <div class="multitask-linkage-objective">${escapeHtml(linkage.training_objective || '')}</div>
+    </div>
+    <div class="multitask-groups-grid">
+      ${groupOrder.map(group => `
+        <div class="multitask-group-card">
+          <h3>${escapeHtml(group)}</h3>
+          <div class="multitask-group-count">${escapeHtml(groupCounts[group] ?? 0)}</div>
+          <div class="multitask-group-ids">${escapeHtml(((overview.task_ids_by_group || {})[group] || []).join(' · ') || 'none')}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="multitask-status-grid">
+      ${statusItems.map(([label, value]) => `
+        <div class="multitask-status-card">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `).join('')}
+    </div>
+    <div class="table-wrap multitask-table-wrap">
+      <table class="multitask-table">
+        <thead>
+          <tr>
+            <th>task_id</th>
+            <th>状态</th>
+            <th>group</th>
+            <th>label_key</th>
+            <th>horizon</th>
+            <th>threshold</th>
+            <th>objective</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${taskRows.map(row => `
+            <tr>
+              <td>${escapeHtml(row.id || '')}</td>
+              <td>${escapeHtml(row.pipeline_status || '')}</td>
+              <td>${escapeHtml(row.group || '')}</td>
+              <td>${escapeHtml(row.label_key || '')}</td>
+              <td>${escapeHtml(row.horizon ?? '')}</td>
+              <td>${escapeHtml(row.threshold ?? '')}</td>
+              <td>${escapeHtml(row.objective || '')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function renderCharts() {

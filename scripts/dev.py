@@ -53,10 +53,10 @@ def cmd_smoke(args: argparse.Namespace) -> int:
         "import sys; from pathlib import Path; "
         "root = Path.cwd(); sys.path.insert(0, str(root / 'src')); "
         "import ashare_platform.announcements, ashare_platform.config, "
-        "ashare_platform.dashboard, ashare_platform.io_utils, "
-        "ashare_platform.priority, ashare_platform.qlib_pipeline, "
+        "ashare_platform.dashboard, ashare_platform.fusion, ashare_platform.io_utils, "
+        "ashare_platform.priority, ashare_platform.qlib_pipeline, ashare_platform.quant_pipeline, "
         "ashare_platform.summarizer, ashare_platform.watchlist, "
-        "ashare_platform.wangji_scanner; "
+        "ashare_platform.consolidation_breakout_scanner; "
         "print('smoke ok')"
     )
     return _run([_python(), '-c', smoke_code], config=args.config)
@@ -64,6 +64,14 @@ def cmd_smoke(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     return _run([_python(), 'scripts/run_weekly_pipeline.py'], config=args.config)
+
+
+def cmd_model_training(args: argparse.Namespace) -> int:
+    return _run([_python(), 'scripts/run_model_training_only.py'], config=args.config)
+
+
+def cmd_daily_refresh(args: argparse.Namespace) -> int:
+    return _run([_python(), 'scripts/run_daily_refresh.py'], config=args.config)
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
@@ -86,8 +94,47 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     return _run([_python(), 'scripts/build_instrument_timeline.py', args.instrument, '--limit', str(args.limit)], config=args.config)
 
 
+def cmd_consolidation_breakout_scanner(args: argparse.Namespace) -> int:
+    return _run([_python(), 'scripts/run_consolidation_breakout_scanner.py'], config=args.config)
+
+
 def cmd_wangji_scanner(args: argparse.Namespace) -> int:
-    return _run([_python(), 'scripts/run_wangji_scanner.py'], config=args.config)
+    return cmd_consolidation_breakout_scanner(args)
+
+
+def cmd_consolidation_breakout_refresh_cache(args: argparse.Namespace) -> int:
+    return _run([_python(), 'scripts/refresh_consolidation_breakout_turnover_cache.py'], config=args.config)
+
+
+def cmd_wangji_refresh_cache(args: argparse.Namespace) -> int:
+    return cmd_consolidation_breakout_refresh_cache(args)
+
+
+def cmd_model_consolidation_breakout_fusion(args: argparse.Namespace) -> int:
+    return _run([_python(), 'scripts/build_model_consolidation_breakout_fusion.py'], config=args.config)
+
+
+def cmd_model_wangji_fusion(args: argparse.Namespace) -> int:
+    return cmd_model_consolidation_breakout_fusion(args)
+
+
+def cmd_build_history_extension(args: argparse.Namespace) -> int:
+    return _run([_python(), 'scripts/build_training_history_extension.py'], config=args.config)
+
+
+def cmd_quant_pipeline(args: argparse.Namespace) -> int:
+    return _run([_python(), 'scripts/build_quant_pipeline_snapshot.py'], config=args.config)
+
+
+def cmd_consolidation_breakout_calibration(args: argparse.Namespace) -> int:
+    command = [_python(), 'scripts/run_consolidation_breakout_calibration.py', '--profile', args.profile, '--start-date', args.start_date]
+    if args.end_date:
+        command.extend(['--end-date', args.end_date])
+    return _run(command, config=args.config)
+
+
+def cmd_wangji_calibration(args: argparse.Namespace) -> int:
+    return cmd_consolidation_breakout_calibration(args)
 
 
 def cmd_wangji_sacnner(args: argparse.Namespace) -> int:
@@ -143,6 +190,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser('run', help='Run the full weekly pipeline')
     run_parser.set_defaults(func=cmd_run)
 
+    model_training_parser = subparsers.add_parser('model-training', help='Run the heavy training pipeline only and persist the model artifact')
+    model_training_parser.set_defaults(func=cmd_model_training)
+
+    daily_refresh_parser = subparsers.add_parser('daily-refresh', help='Refresh latest live data, announcements, scanners, watchlists, archives, and dashboard without retraining')
+    daily_refresh_parser.set_defaults(func=cmd_daily_refresh)
+
     dashboard_parser = subparsers.add_parser('dashboard', help='Rebuild dashboard_data.json only')
     dashboard_parser.set_defaults(func=cmd_dashboard)
 
@@ -160,8 +213,41 @@ def build_parser() -> argparse.ArgumentParser:
     timeline_parser.add_argument('--limit', type=int, default=20)
     timeline_parser.set_defaults(func=cmd_timeline)
 
-    wangji_parser = subparsers.add_parser('wangji-scanner', help='Run Wangji 14-day breakout-pullback pattern scanner')
+    consolidation_breakout_parser = subparsers.add_parser('consolidation-breakout-scanner', help='Run consolidation breakout scanner with impulse/digestion scoring')
+    consolidation_breakout_parser.set_defaults(func=cmd_consolidation_breakout_scanner)
+
+    wangji_parser = subparsers.add_parser('wangji-scanner', help='Legacy alias for consolidation-breakout-scanner')
     wangji_parser.set_defaults(func=cmd_wangji_scanner)
+
+    consolidation_breakout_cache_parser = subparsers.add_parser('consolidation-breakout-refresh-cache', help='Refresh local consolidation breakout turnover prefilter cache')
+    consolidation_breakout_cache_parser.set_defaults(func=cmd_consolidation_breakout_refresh_cache)
+
+    wangji_cache_parser = subparsers.add_parser('wangji-refresh-cache', help='Legacy alias for consolidation-breakout-refresh-cache')
+    wangji_cache_parser.set_defaults(func=cmd_wangji_refresh_cache)
+
+    fusion_parser = subparsers.add_parser('model-consolidation-breakout-fusion', help='Build fused ranking from model candidates and consolidation breakout scanner results')
+    fusion_parser.set_defaults(func=cmd_model_consolidation_breakout_fusion)
+
+    legacy_fusion_parser = subparsers.add_parser('model-wangji-fusion', help='Legacy alias for model-consolidation-breakout-fusion')
+    legacy_fusion_parser.set_defaults(func=cmd_model_wangji_fusion)
+
+    history_ext_parser = subparsers.add_parser('history-extension', help='Fetch AkShare recent history extension for model training')
+    history_ext_parser.set_defaults(func=cmd_build_history_extension)
+
+    quant_pipeline_parser = subparsers.add_parser('quant-pipeline', help='Build a complete quant pipeline blueprint snapshot from current project state')
+    quant_pipeline_parser.set_defaults(func=cmd_quant_pipeline)
+
+    consolidation_breakout_calibration_parser = subparsers.add_parser('consolidation-breakout-calibration', help='Replay calibration tickers and summarize best historical windows for consolidation breakout')
+    consolidation_breakout_calibration_parser.add_argument('--profile', default='relax', choices=['relax'])
+    consolidation_breakout_calibration_parser.add_argument('--start-date', default='20240101')
+    consolidation_breakout_calibration_parser.add_argument('--end-date', default='')
+    consolidation_breakout_calibration_parser.set_defaults(func=cmd_consolidation_breakout_calibration)
+
+    wangji_calibration_parser = subparsers.add_parser('wangji-calibration', help='Legacy alias for consolidation-breakout-calibration')
+    wangji_calibration_parser.add_argument('--profile', default='relax', choices=['relax'])
+    wangji_calibration_parser.add_argument('--start-date', default='20240101')
+    wangji_calibration_parser.add_argument('--end-date', default='')
+    wangji_calibration_parser.set_defaults(func=cmd_wangji_calibration)
 
     wangji_legacy_parser = subparsers.add_parser('wangji-sacnner', help='Legacy alias for wangji-scanner')
     wangji_legacy_parser.set_defaults(func=cmd_wangji_sacnner)

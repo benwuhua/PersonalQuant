@@ -111,6 +111,11 @@ def _build_ops_snapshot(
     }
 
 
+def _format_int_list(values: list[Any]) -> str:
+    cleaned = [str(int(value)) for value in values if value not in (None, '')]
+    return ' / '.join(cleaned) if cleaned else 'n/a'
+
+
 def _build_model_scanner(top30_candidates: list[dict[str, Any]]) -> dict[str, Any]:
     candidate_date = ''
     candidate_source = ''
@@ -146,25 +151,114 @@ def _build_model_scanner(top30_candidates: list[dict[str, Any]]) -> dict[str, An
     }
 
 
-def _build_wangji_scanner_payload() -> dict[str, Any]:
-    summary = _read_json_object(OUTPUTS_DIR / 'wangji-scanner_summary.json')
-    strict_rows = _read_csv(OUTPUTS_DIR / 'wangji-scanner_strict_candidates.csv')
-    relax_rows = _read_csv(OUTPUTS_DIR / 'wangji-scanner_relax_candidates.csv')
-    strict_report = _read_text(OUTPUTS_DIR / 'wangji-scanner_strict_report.md')
-    relax_report = _read_text(OUTPUTS_DIR / 'wangji-scanner_relax_report.md')
-    return {
-        'name': 'wangji-scanner',
-        'summary': summary,
-        'strict': {
-            'rows': strict_rows,
-            'report': strict_report,
-            'summary': summary.get('strict', {}),
-        },
+def _build_consolidation_breakout_scanner_payload() -> dict[str, Any]:
+    summary = _read_json_object(OUTPUTS_DIR / 'consolidation-breakout-scanner_summary.json')
+    if not summary:
+        summary = _read_json_object(OUTPUTS_DIR / 'wangji-scanner_summary.json')
+    relax_rows = _read_csv(OUTPUTS_DIR / 'consolidation-breakout-scanner_relax_candidates.csv')
+    if not relax_rows:
+        relax_rows = _read_csv(OUTPUTS_DIR / 'wangji-scanner_relax_candidates.csv')
+    relax_report = _read_text(OUTPUTS_DIR / 'consolidation-breakout-scanner_relax_report.md')
+    if not relax_report:
+        relax_report = _read_text(OUTPUTS_DIR / 'wangji-scanner_relax_report.md')
+    relax_summary = summary.get('relax', summary)
+    payload = {
+        'name': 'consolidation-breakout-scanner',
+        'display_name': '盘整突破扫描器',
+        'summary': {'relax': relax_summary},
         'relax': {
             'rows': relax_rows,
             'report': relax_report,
-            'summary': summary.get('relax', {}),
+            'summary': relax_summary,
         },
+    }
+    return payload
+
+
+def _build_multitask_label_overview(multitask_label_spec: dict[str, Any]) -> dict[str, Any]:
+    tasks = multitask_label_spec.get('tasks', []) if isinstance(multitask_label_spec.get('tasks', []), list) else []
+    group_counts: dict[str, int] = {}
+    task_ids_by_group: dict[str, list[str]] = {}
+    task_rows: list[dict[str, Any]] = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        group = str(task.get('group', 'other') or 'other')
+        task_id = str(task.get('id', '') or '')
+        group_counts[group] = group_counts.get(group, 0) + 1
+        task_ids_by_group.setdefault(group, []).append(task_id)
+        task_rows.append(
+            {
+                'id': task_id,
+                'group': group,
+                'label_key': str(task.get('label_key', '') or ''),
+                'objective': str(task.get('objective', '') or ''),
+                'horizon': task.get('horizon', ''),
+                'threshold': task.get('threshold', ''),
+            }
+        )
+    return {
+        'task_count': len(task_rows),
+        'group_counts': group_counts,
+        'task_ids_by_group': task_ids_by_group,
+        'task_rows': task_rows,
+    }
+
+
+def _build_multitask_training_linkage(
+    multitask_label_spec: dict[str, Any],
+    strategy_validation_summary: dict[str, Any],
+) -> dict[str, Any]:
+    primary_horizon = int(multitask_label_spec.get('primary_horizon', 0) or 0)
+    training_label_key = f'excess_ret_{primary_horizon}_label' if primary_horizon > 0 else ''
+    training_task_id = f'excess_return_{primary_horizon}d' if primary_horizon > 0 else ''
+    task_lookup = {
+        str(task.get('id', '') or ''): task
+        for task in multitask_label_spec.get('tasks', [])
+        if isinstance(task, dict)
+    }
+    training_task = task_lookup.get(training_task_id, {})
+    return {
+        'primary_horizon': primary_horizon,
+        'training_label_key': training_label_key,
+        'training_task_id': training_task_id,
+        'training_objective': str(training_task.get('objective', '') or ''),
+        'validation_metric_name': 'topk_avg_label_mean',
+        'validation_metric_label_key': training_label_key,
+        'fold_count': int(strategy_validation_summary.get('fold_count', 0) or 0),
+        'rank_ic_mean': _to_float(strategy_validation_summary.get('rank_ic_mean', 0.0)),
+        'topk_avg_label_mean': _to_float(strategy_validation_summary.get('topk_avg_label_mean', 0.0)),
+        'generated_at': str(strategy_validation_summary.get('generated_at', '') or ''),
+    }
+
+
+def _build_multitask_task_status(
+    multitask_label_overview: dict[str, Any],
+    multitask_training_linkage: dict[str, Any],
+) -> dict[str, Any]:
+    training_task_id = str(multitask_training_linkage.get('training_task_id', '') or '')
+    status_counts = {
+        'training_primary': 0,
+        'data_ready_not_training': 0,
+        'auxiliary_diagnostic': 0,
+    }
+    task_rows: list[dict[str, Any]] = []
+    for row in multitask_label_overview.get('task_rows', []):
+        task = dict(row)
+        task_id = str(task.get('id', '') or '')
+        group = str(task.get('group', '') or '')
+        if task_id == training_task_id:
+            pipeline_status = 'training_primary'
+        elif group in {'classification', 'risk', 'event'}:
+            pipeline_status = 'auxiliary_diagnostic'
+        else:
+            pipeline_status = 'data_ready_not_training'
+        status_counts[pipeline_status] += 1
+        task['pipeline_status'] = pipeline_status
+        task_rows.append(task)
+    return {
+        'status_counts': status_counts,
+        'task_rows': task_rows,
     }
 
 
@@ -213,14 +307,22 @@ def build_dashboard_payload() -> dict[str, Any]:
 
     recent_archives = list_recent_archives(ARCHIVES_DIR, limit=8)
     strategy_validation_summary = _read_json_object(OUTPUTS_DIR / 'strategy_validation_summary.json')
+    model_validation_summary = _read_json_object(OUTPUTS_DIR / 'model_validation_summary.json')
     backtest_summary = _read_json_object(OUTPUTS_DIR / 'backtest_summary.json')
     archive_diff = _read_json_object(OUTPUTS_DIR / 'archive_diff.json')
+    multitask_label_spec = _read_json_object(OUTPUTS_DIR / 'multitask_label_spec.json')
     ops = _build_ops_snapshot(recent_archives, strategy_validation_summary, backtest_summary, archive_diff)
 
     model_scanner = _build_model_scanner(top30_candidates)
-    wangji_scanner = _build_wangji_scanner_payload()
-    strict_summary = wangji_scanner.get('strict', {}).get('summary', {})
-    relax_summary = wangji_scanner.get('relax', {}).get('summary', {})
+    consolidation_breakout_scanner = _build_consolidation_breakout_scanner_payload()
+    relax_summary = consolidation_breakout_scanner.get('relax', {}).get('summary', {})
+
+    label_tasks = multitask_label_spec.get('tasks', []) if isinstance(multitask_label_spec.get('tasks', []), list) else []
+    return_horizons = multitask_label_spec.get('return_horizons', []) if isinstance(multitask_label_spec.get('return_horizons', []), list) else []
+    event_windows = multitask_label_spec.get('event_windows', []) if isinstance(multitask_label_spec.get('event_windows', []), list) else []
+    multitask_label_overview = _build_multitask_label_overview(multitask_label_spec)
+    multitask_training_linkage = _build_multitask_training_linkage(multitask_label_spec, model_validation_summary)
+    multitask_task_status = _build_multitask_task_status(multitask_label_overview, multitask_training_linkage)
 
     summary = {
         'priority_count': len(priority_candidates),
@@ -236,12 +338,24 @@ def build_dashboard_payload() -> dict[str, Any]:
         'validation_days_compared': ops['validation_compare'].get('days_compared', 0),
         'latest_batch': ops['latest_archive'].get('batch_name', ''),
         'model_scanner_count': model_scanner['summary'].get('total', 0),
-        'wangji_strict_passed': strict_summary.get('passed', 0),
+        'consolidation_breakout_relax_passed': relax_summary.get('passed', 0),
         'wangji_relax_passed': relax_summary.get('passed', 0),
+        'multitask_task_count': len(label_tasks),
+        'label_primary_horizon': int(multitask_label_spec.get('primary_horizon', 0) or 0),
+        'label_return_horizons': _format_int_list(return_horizons),
+        'label_event_windows': _format_int_list(event_windows),
+        'label_hit_threshold': _to_float(multitask_label_spec.get('hit_threshold', 0.0)),
+        'label_risk_threshold': _to_float(multitask_label_spec.get('risk_threshold', 0.0)),
     }
 
     return {
         'summary': summary,
+        'quant_pipeline_snapshot': _read_json_object(OUTPUTS_DIR / 'quant_pipeline_snapshot.json'),
+        'quant_pipeline_blueprint': _read_text(OUTPUTS_DIR / 'quant_pipeline_blueprint.md'),
+        'multitask_label_spec': multitask_label_spec,
+        'multitask_label_overview': multitask_label_overview,
+        'multitask_training_linkage': multitask_training_linkage,
+        'multitask_task_status': multitask_task_status,
         'priority_candidates': priority_candidates,
         'risk_candidates': risk_candidates,
         'top30_candidates': top30_candidates,
@@ -254,7 +368,8 @@ def build_dashboard_payload() -> dict[str, Any]:
         'ops': ops,
         'screeners': {
             'model_scanner': model_scanner,
-            'wangji_scanner': wangji_scanner,
+            'consolidation_breakout_scanner': consolidation_breakout_scanner,
+            'wangji_scanner': consolidation_breakout_scanner,
         },
         'daily_watchlist': _read_text(OUTPUTS_DIR / 'daily_watchlist.md'),
         'weekly_watchlist': _read_text(OUTPUTS_DIR / 'weekly_watchlist.md'),
