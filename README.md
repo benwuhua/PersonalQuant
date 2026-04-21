@@ -1,443 +1,260 @@
-# PersonalQuant
+# Qlib Factor Lab
 
-PersonalQuant 是一个面向个人研究场景的 A 股投研操作台。它不是自动交易系统，也不是一个过度包装的量化框架；它更像一个稳定、可复盘、可扩展的研究后台：先用量价做初筛，再用公告事件做再排序，最后把结果整理成适合人工复核的候选池、事件卡片和观察清单。
+这是一个轻量的 Qlib 因子工厂脚手架，用来管理、评估和筛选公式型因子。
 
-![Dashboard overview](docs/assets/dashboard-overview.png)
-
-## What this project produces
-
-当前 1.0 版本聚焦 4 个稳定输出：
-
-1. 每周候选池 Top 30
-2. 候选股最近 7 天公告事件卡片
-3. 每日 / 每周 / 风险观察清单
-4. 本地可视化前端仪表盘
-5. 前向验证 / 历史评估 / 批次 diff / 单票时间线
-6. consolidation-breakout-scanner 14日盘整突破扫描器（relax）
-
-如果你想先看“跑出来到底长什么样”，先看：
-
-- `docs/sample_outputs.md`：样例输出说明
-- `docs/environment_setup.md`：环境准备说明
-- `docs/pattern_14d_breakout_pullback_spec.md`：14日整理-放量突破-缩量回踩 形态规则说明书
-
-## Why it exists
-
-很多个人投研流程的问题不是“没模型”，而是：
-
-- 候选池太散，无法快速收敛
-- 公告阅读成本太高
-- 催化与风险混在一起，优先级不清晰
-- 每次跑出来的结果不能回溯，难以复盘
-
-PersonalQuant 当前的思路是：
-
-- 量价层负责“先收窄范围”
-- 公告事件层负责“再提炼优先级”
-- watchlist 负责“把结果变成人能直接执行的动作清单”
-- archive 负责“把每次输出留下来，给后续时间线与复盘做基础”
-
-## End-to-end workflow
+默认数据目录：
 
 ```text
-Qlib 历史样本训练
-        ↓
-AkShare live CSI300 候选打分
-        ↓
-Top30 候选池
-        ↓
-抓最近 7 天公告 + PDF 正文摘录 / 标题回退
-        ↓
-事件卡片生成（importance / bias / confidence / summary）
-        ↓
-priority_score / risk_attention_score 双榜
-        ↓
-Daily / Weekly / Risk Watchlists
-        ↓
-Dashboard 浏览 + 历史归档
+data/qlib/cn_data
 ```
 
-## Architecture
-
-```text
-                    ┌───────────────────────────┐
-                    │     config/config.yaml    │
-                    └─────────────┬─────────────┘
-                                  │
-             ┌────────────────────┼────────────────────┐
-             │                    │                    │
-             ▼                    ▼                    ▼
-┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐
-│ qlib_pipeline.py   │  │ announcements.py   │  │ summarizer.py      │
-│ - train baseline   │  │ - fetch notices    │  │ - classify events  │
-│ - score candidates │  │ - extract PDF text │  │ - build summaries  │
-└─────────┬──────────┘  └─────────┬──────────┘  └─────────┬──────────┘
-          │                       │                       │
-          └──────────────┬────────┴──────────────┬────────┘
-                         ▼                       ▼
-                 ┌──────────────────────────────────────┐
-                 │            priority.py               │
-                 │ - event_score                        │
-                 │ - priority_score                     │
-                 │ - risk_attention_score               │
-                 └─────────────────┬────────────────────┘
-                                   │
-                     ┌─────────────┼─────────────┐
-                     ▼             ▼             ▼
-          ┌────────────────┐ ┌──────────────┐ ┌──────────────────┐
-          │ watchlist.py   │ │ dashboard.py │ │ io_utils.py       │
-          │ - daily/weekly │ │ - json snap  │ │ - archives/latest │
-          │ - risk list    │ │ - ui payload │ │ - batch snapshots │
-          └────────┬───────┘ └──────┬───────┘ └────────┬─────────┘
-                   │                │                  │
-                   ▼                ▼                  ▼
-          data/outputs/*     frontend/*         data/archives/*
-```
-
-## Current capabilities
-
-### Quant layer
-- 用 Qlib 历史样本训练量价 baseline
-- 用 AkShare 拉取当前沪深 300 成分股最近行情并实时打分
-- 默认候选生成模式：`live_akshare`
-- 当前 baseline 已升级为 v1.1 特征增强版，包含：
-  - 1/5/10/20 日动量
-  - 5/10/20 日均线结构及偏离率
-  - 5/10/20 日量能结构及偏离率
-  - 5/20 日波动率
-  - intraday / overnight 因子
-  - 20 日价格位置
-  - 20 日成交量 z-score
-
-### Event layer
-- 对候选池抓最近 7 天公告
-- 优先尝试 PDF 正文摘录，失败自动回退 `title_only`
-- 已加入正文质量评分与低质量回退，避免乱码 / 空正文污染排序
-- 事件层会输出：
-  - `card_score`
-  - `risk_card_score`
-  - `event_score`
-  - `priority_score`
-  - `risk_attention_score`
-
-### Output layer
-- `priority_candidates.csv`
-- `risk_candidates.csv`
-- `event_cards.json`
-- `daily_watchlist.md`
-- `weekly_watchlist.md`
-- `risk_watchlist.md`
-- `dashboard_data.json`
-- `strategy_validation_summary.json`
-- `strategy_validation_report.md`
-- `backtest_summary.json`
-- `backtest_summary.md`
-- `archive_diff.json`
-- `archive_diff.md`
-- `data/validation/validation_records.csv`
-- `data/outputs/timelines/*.md`
-- `data/archives/run_YYYYMMDD_HHMMSS/`
-
-## Scoring logic
-
-当前排序不是只靠单一 quant score，而是双层结构：
-
-```text
-priority_score       = 0.55 * quant_score_norm + 0.45 * event_score
-risk_attention_score = 0.80 * risk_event_score + 0.20 * quant_score_norm
-```
-
-设计意图：
-- priority 用来回答“今天先看谁”
-- risk 用来回答“哪些票需要优先做负面复核”
-
-## Repository layout
-
-```text
-config/                  配置文件
-src/ashare_platform/     后端核心模块
-scripts/                 可直接运行的脚本
-frontend/                本地静态前端
-notebooks/               研究预留目录
-docs/                    文档、样例、扩展说明
-  assets/                README/文档图片资源
-data/
-  announcements/         公告样本 / 输入
-  factors/               预留因子目录
-  outputs/               当前批次输出（默认忽略）
-  processed/             处理中间产物（默认忽略）
-  archives/              历史归档（默认忽略）
-logs/                    运行日志（默认忽略）
-```
-
-## Environment
-
-推荐运行环境：
-
-- macOS Apple Silicon
-- Python 3.11
-- 已验证可用的 Qlib 虚拟环境：`~/.venvs/qlib`
-
-最快启动方式：
+## 1. 创建环境
 
 ```bash
-source ~/.venvs/qlib-activate.sh
-python -V
-python -c "import qlib, akshare, lightgbm, pandas; print('env ok')"
-```
-
-如果你需要自行安装依赖：
-
-```bash
-python3.11 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
-更完整的环境说明见：`docs/environment_setup.md`
-
-## Quickstart
+## 2. 下载 Qlib CN 日频公开数据
 
 ```bash
-cd /Users/ryan/.hermes/hermes-agent/projects/a_share_research_platform
-source ~/.venvs/qlib-activate.sh
-python scripts/run_weekly_pipeline.py
-python scripts/serve_dashboard.py
+python scripts/download_qlib_data.py
 ```
 
-打开：
+该脚本会按 Qlib 官方推荐的 `scripts/get_data.py qlib_data --target_dir ... --region cn` 路线下载数据。
+
+## 3. 检查环境和数据
+
+```bash
+python scripts/check_env.py
+```
+
+## 4. 评估一个因子
+
+```bash
+python scripts/eval_factor.py --factor ret_20
+```
+
+报告会写到：
 
 ```text
-http://127.0.0.1:8765
+reports/factor_ret_20.csv
 ```
 
-## Developer-friendly entrypoints
-
-仓库现在补了几样更顺手的工程入口：
-
-- `scripts/dev.py`：统一 CLI 入口
-- `Makefile`：对常用 CLI 命令做更短的包装
-- `config/config.sample.yaml`
-- `.github/ISSUE_TEMPLATE/*`
-- `.github/pull_request_template.md`
-
-推荐直接用统一 CLI：
+## 5. 批量评估
 
 ```bash
-python scripts/dev.py --help
-python scripts/dev.py init-config
-python scripts/dev.py smoke
-python scripts/dev.py run
-python scripts/dev.py dashboard
-python scripts/dev.py validate
-python scripts/dev.py backtest
-python scripts/dev.py archive-diff
-python scripts/dev.py timeline SH600875 --limit 5
-python scripts/dev.py consolidation-breakout-scanner
-python scripts/dev.py quant-pipeline
-# 兼容旧命令
-python scripts/dev.py wangji-scanner
-python scripts/dev.py cron-run
-python scripts/dev.py serve --port 8765
-python scripts/dev.py clean-pyc
-
+python scripts/batch_eval_factors.py
 ```
 
-如果你更喜欢短命令，也可以继续用 Makefile：
-
-```bash
-make help
-make init-config
-make smoke
-make run
-make dashboard
-make wangji-scanner
-make cron-run
-make serve PORT=8765
-```
-
-如果你想使用自定义配置而不是默认 `config/config.yaml`：
-
-```bash
-python scripts/dev.py --config config/config.local.yaml run
-make run CONFIG=config/config.local.yaml
-```
-
-底层通过环境变量：
+报告会写到：
 
 ```text
-PERSONALQUANT_CONFIG=/path/to/config.yaml
+reports/factor_batch.csv
 ```
 
-来切换配置文件。
-
-## Common commands
-
-### 1) 运行完整主流程
+也可以加上规模代理中性化和图表：
 
 ```bash
-python scripts/run_weekly_pipeline.py
+python scripts/eval_factor.py --factor ret_20 --neutralize-size-proxy --plot --plot-horizon 5
+python scripts/batch_eval_factors.py --neutralize-size-proxy --plot-top
 ```
 
-默认会完成：
-- Qlib 训练与打分
-- Top30 候选池生成
-- 公告抓取与正文抽取
-- 事件卡片生成
-- priority / risk 候选池生成
-- watchlist 输出
-- forward validation 快照 / 回填 / 报告
-- historical backtest 评估摘要
-- archive diff
-- top priority 时间线文件
-- dashboard 数据快照生成
-- 当前批次归档
+当前公开 Qlib CN 日频数据没有行业和市值字段，所以这里默认提供两层能力：
 
-### 2) 单独重建 dashboard 数据
+- `--neutralize-size-proxy`: 使用 `log(close * volume)` 作为规模/流动性代理做横截面中性化。
+- `--industry-map path/to/industry.csv`: 如果你有自己的行业映射 CSV，可用 `instrument,industry` 两列接入行业中性化。
+
+示例行业文件：
+
+```csv
+instrument,industry
+SH600000,bank
+SZ000001,bank
+```
+
+## 6. 候选因子挖掘
+
+候选模板在：
+
+```text
+configs/factor_mining.yaml
+```
+
+只生成候选公式表：
 
 ```bash
-python scripts/build_dashboard_data.py
+python scripts/mine_factors.py --generate-only
 ```
 
-### 3) 启动本地 dashboard
+批量筛选候选因子：
 
 ```bash
-python scripts/serve_dashboard.py
+python scripts/mine_factors.py --horizon 5 --horizon 10 --horizon 20
 ```
 
-## Frontend
-
-当前前端是纯静态页面，不依赖 React / Vue，直接读取 `data/outputs/dashboard_data.json`。
-
-支持：
-- 多头优先池浏览
-- 风险观察池浏览
-- 事件卡片浏览
-- 股票详情聚合
-- 搜索与基础筛选
-- 运行与验证概览卡片
-- strategy validation / backtest / archive diff 报告切换
-- recent_archives 数据展示
-- 单票时间线展示
-
-## consolidation-breakout-scanner
-
-你刚刚定义的 14 日形态规则，已经做成了一个独立扫描器：
-
-- `consolidation-breakout-scanner`
-
-入口：
+冒烟测试可以少跑几个：
 
 ```bash
-python scripts/dev.py consolidation-breakout-scanner
-# 或
-python scripts/run_consolidation_breakout_scanner.py
+python scripts/mine_factors.py --limit 2 --horizon 5 --output reports/factor_mining_smoke.csv
 ```
 
-兼容旧别名：
+输出：
+
+```text
+reports/factor_mining_candidates.csv
+reports/factor_mining_results.csv
+```
+
+## 7. LightGBM 训练和回测
+
+渲染 Qlib workflow 配置但不运行：
 
 ```bash
-python scripts/dev.py wangji-scanner
-python scripts/dev.py wangji-sacnner
-python scripts/run_consolidation_breakout_scanner.py
-python scripts/run_wangji_scanner.py
-python scripts/run_wangji_sacnner.py
+python scripts/run_lgb_workflow.py --dry-run
 ```
 
-输出文件：
-- `data/outputs/consolidation-breakout-scanner_relax_candidates.csv`
-- `data/outputs/consolidation-breakout-scanner_relax_report.md`
-- `data/outputs/consolidation-breakout-scanner_summary.json`
-
-当前盘整突破 live 扫描池默认使用 `live_data.consolidation_breakout_universe`。现在默认已扩大为 `all_a`，但不会直接全量逐票拉历史，而是先用 `live_data.consolidation_breakout_prefilter_mode: turnover_top_n` 按当日成交额做预筛，再对前 `live_data.consolidation_breakout_prefilter_top_n` 只股票跑扫描。默认值是 1200；如需缩回沪深300，可改成 `csi300`；如需真全量，可把 `consolidation_breakout_prefilter_mode` 设为 `none`。也可用 `live_data.consolidation_breakout_extra_codes` 追加指定股票。旧的 wangji_* 配置键仍兼容。
-
-LightGBM 训练 universe 已默认从 `csi300` 扩到 `all`（Qlib 全A可用池）；当前 live 模型候选池仍保持 `akshare_live_csi300`，也就是“训练更大、实盘打分仍先在沪深300里跑”。
-
-成交额预筛会把结果缓存到 `data/outputs/consolidation_breakout_turnover_cache.json`。平时 `python scripts/dev.py consolidation-breakout-scanner` 会优先尝试实时刷新；若快照接口失败，则自动回退到最近一次缓存；若缓存也没有，再退回 csi300 兜底。也可以手动执行 `python scripts/dev.py consolidation-breakout-refresh-cache` 单独刷新缓存。旧的 `wangji_turnover_cache.json` 仍会同步写出以兼容历史流程。
-
-前端现在也新增了“初筛板块”，同时展示：
-- 模型初筛结果
-- consolidation-breakout-scanner 结果
-- consolidation-breakout-scanner relax 参数调节与按钮实时生成候选
-
-当前规则包含：
-- 周线 MA5 > MA13 > MA21
-- 周线均线整体向上
-- 日线前10日窄幅整理
-- 第11日放量突破
-- 第12-14日缩量回踩
-
-## Scheduled workflow / cron
-
-完整定时入口现在是：
+运行 Qlib Alpha158 + LightGBM + TopK 回测：
 
 ```bash
-bash scripts/run_cron_workflow.sh
+python scripts/run_lgb_workflow.py
 ```
 
-它会：
-- 激活 `~/.venvs/qlib-activate.sh`
-- 执行完整 pipeline
-- 刷新 validation / backtest / archive diff / timelines / dashboard data
-- 把运行日志写入 `logs/cron/`
+脚本会根据本地 `configs/provider.yaml` 自动生成：
 
-建议默认计划：
-
-```cron
-35 8 * * 1-5
+```text
+configs/qlib_lgb_workflow.yaml
 ```
 
-这样工作日早上会自动生成一轮新的研究快照。
+Qlib 的训练记录会写入本地：
 
-更完整说明见：`docs/cron_workflow.md`
+```text
+mlruns/
+```
 
-## CI
+注意：这个项目目录不是 git 仓库时，Qlib recorder 会打印几段 `git diff` / `git status` 警告。它不影响训练和回测，只是 Qlib 想记录代码版本但找不到 git 元数据。
 
-仓库内置最小 smoke CI：
+## 8. AkShare 当前 A 股数据
 
-- 安装 `requirements.txt`
-- `python -m compileall src scripts`
-- import smoke test
+默认的 Qlib 官方公开包适合教学和流程验证，但数据只到 2020 年。要做当前研究，可以用 AkShare 构建一个独立的当前数据目录：
 
-对应文件：`.github/workflows/smoke.yml`
+```bash
+python scripts/build_akshare_qlib_data.py \
+  --universe csi500 \
+  --start 20150101 \
+  --end 20260420 \
+  --history-source sina \
+  --qlib-dir data/qlib/cn_data_current \
+  --source-dir data/akshare/source \
+  --provider-config configs/provider_current.yaml
+```
 
-## Current limitations
+这个目录使用当前中证 500 成分股，日频前复权行情，默认字段包括：
 
-- 默认 `llm.provider=mock`，事件摘要和分类仍以规则版为主
-- 东方财富 PDF 正文抽取偶尔会出现空正文或低质量文本，当前已做安全回退
-- 当前重点是“量价初筛 + 公告事件再排序”，不是高频策略或自动交易系统
-- 当前更重视解释性与流程稳定性，而不是追求复杂模型堆叠
+```text
+open, close, high, low, volume, amount, vwap, factor
+```
 
-## Roadmap
+当前数据配置：
 
-### Near-term
-- [ ] 公告正文多源兜底
-- [ ] 单票事件时间线与历史批次对比
-- [ ] 事件分类器继续提纯
-- [ ] 说明会 / 调研纪要 与真实业绩催化进一步区分
+```text
+configs/provider_current.yaml
+```
 
-### Mid-term
-- [ ] 横截面排序评估（rank IC / 分组回测）
-- [ ] 相对强弱 / 行业超额收益因子
-- [ ] 历史批次对比页
-- [ ] 单票研究档案页
+使用当前数据跑单因子：
 
-### Optional
-- [ ] 更强的 LLM 事件卡片生成链路
-- [ ] 更轻量的一键运行脚本 / Makefile
-- [ ] 更完整的 sample config / sample outputs bundle
+```bash
+python scripts/eval_factor.py \
+  --provider-config configs/provider_current.yaml \
+  --factor ret_20 \
+  --output reports/factor_ret_20_current.csv
+```
 
-## Key files
+使用当前数据生成 LightGBM workflow：
 
-- 配置：`config/config.yaml`
-- 周度主流程：`scripts/run_weekly_pipeline.py`
-- 公告处理：`src/ashare_platform/announcements.py`
-- 事件摘要：`src/ashare_platform/summarizer.py`
-- 排序逻辑：`src/ashare_platform/priority.py`
-- 仪表盘数据：`src/ashare_platform/dashboard.py`
-- 样例输出说明：`docs/sample_outputs.md`
+```bash
+python scripts/run_lgb_workflow.py \
+  --provider-config configs/provider_current.yaml \
+  --output configs/qlib_lgb_workflow_current.yaml \
+  --dry-run
+```
 
-## License
+去掉 `--dry-run` 会直接训练并运行组合回测。当前 AkShare 股票包没有指数行情文件时，workflow 会自动把候选池股票日收益等权平均作为回测基准；如果后续补入 `SH000905` 指数行情，则优先使用中证 500 指数基准。
 
-MIT License
+当前数据的建议训练切分：
+
+```text
+train: 2015-01-01 ~ 2021-12-31
+valid: 2022-01-01 ~ 2023-12-31
+test:  2024-01-01 ~ 2026-04-17
+```
+
+说明：
+
+- AkShare 免费源适合研究原型和个人离线实验，正式生产研究最好接 Tushare、Wind、聚宽或券商数据。
+- Sina 源大批量下载可能限流；脚本支持 `--delay`、`--retries` 和 `--limit`。
+- `SH689009` 这类特殊股票如果 Sina 源缺数据，可以用腾讯源补单只股票。
+
+## 因子库
+
+因子定义在 `factors/registry.yaml` 中，每个因子包含：
+
+- `name`: 因子名
+- `expression`: Qlib 表达式
+- `direction`: 预期方向，`1` 表示越大越好，`-1` 表示越小越好
+- `category`: 因子类别
+- `description`: 逻辑说明
+
+先用简单、可解释的价量因子跑通，再逐步加入财务因子或自动生成因子。
+
+## 因子挖掘候选池
+
+候选池定义在：
+
+```text
+configs/factor_mining.yaml
+```
+
+当前候选池包含 36 个量价表达式，分为 6 类：
+
+```text
+candidate_momentum      动量：收益、跳过近端收益
+candidate_reversal      反转：短期反转、日内反转
+candidate_volatility    波动：收益波动、高低价区间波动
+candidate_volume_price  量价：成交量动量、价量相关
+candidate_liquidity     流动性：成交额、Amihud 式非流动性
+candidate_divergence    背离：价格动量与成交量动量背离
+```
+
+生成候选目录：
+
+```bash
+python scripts/mine_factors.py \
+  --config configs/factor_mining.yaml \
+  --provider-config configs/provider_current.yaml \
+  --candidates-output reports/factor_mining_candidates_current.csv \
+  --generate-only
+```
+
+在当前中证 500 数据上做初筛：
+
+```bash
+python scripts/mine_factors.py \
+  --config configs/factor_mining.yaml \
+  --provider-config configs/provider_current.yaml \
+  --candidates-output reports/factor_mining_candidates_current.csv \
+  --output reports/factor_mining_current.csv \
+  --horizon 5 \
+  --horizon 20
+```
+
+筛选结果会按 `abs_rank_ic_mean` 排序。`rank_ic_mean` 为负时，说明该因子在这段样本里更像“反向使用”的候选，后续可以把方向翻转后再进模型或回测。
+
+## 推荐使用顺序
+
+1. 先用 `scripts/eval_factor.py` 看单因子的 IC、RankIC、换手和分组收益。
+2. 再用 `scripts/mine_factors.py` 批量扩展价量候选因子。
+3. 最后用 `scripts/run_lgb_workflow.py` 把多因子特征接入模型训练和组合回测。

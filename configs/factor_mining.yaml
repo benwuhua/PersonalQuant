@@ -1,0 +1,74 @@
+templates:
+  - name: mom_{window}
+    expression: "$close / Ref($close, {window}) - 1"
+    windows: [5, 10, 20, 60, 120]
+    direction: 1
+    category: candidate_momentum
+    description: "{window} day close-to-close momentum."
+  - name: mom_skip_{lookback}_{skip}
+    expression: "Ref($close, {skip}) / Ref($close, {lookback}) - 1"
+    params:
+      lookback: [20, 60, 120]
+      skip: [5]
+    direction: 1
+    category: candidate_momentum
+    description: "{lookback} day momentum skipping the most recent {skip} sessions."
+  - name: reversal_{window}
+    expression: "Ref($close, {window}) / $close - 1"
+    windows: [3, 5, 10, 20]
+    direction: 1
+    category: candidate_reversal
+    description: "{window} day short-term reversal."
+  - name: intraday_reversal
+    expression: "1 - $close / $open"
+    direction: 1
+    category: candidate_reversal
+    description: "Contrarian signal to the same-day open-to-close return."
+  - name: realized_vol_{window}
+    expression: "Std($close / Ref($close, 1) - 1, {window})"
+    windows: [10, 20, 60]
+    direction: -1
+    category: candidate_volatility
+    description: "{window} day realized volatility; lower values are ranked higher."
+  - name: range_vol_{window}
+    expression: "Mean(($high - $low) / $close, {window})"
+    windows: [10, 20, 60]
+    direction: -1
+    category: candidate_volatility
+    description: "{window} day average intraday high-low range."
+  - name: volume_mom_{window}
+    expression: "Mean($volume, {window}) / Ref(Mean($volume, {window}), {window}) - 1"
+    windows: [5, 20, 60]
+    direction: 1
+    category: candidate_volume_price
+    description: "{window} day volume momentum."
+  - name: pv_corr_{window}
+    expression: "Corr($close / Ref($close, 1) - 1, $volume / Ref($volume, 1) - 1, {window})"
+    windows: [10, 20, 60]
+    direction: 1
+    category: candidate_volume_price
+    description: "{window} day correlation between price return and volume growth."
+  - name: amount_mean_{window}
+    expression: "Mean($amount, {window})"
+    windows: [5, 20, 60]
+    direction: 1
+    category: candidate_liquidity
+    description: "{window} day average traded amount as a liquidity proxy."
+  - name: amihud_illiq_{window}
+    expression: "Mean(Abs($close / Ref($close, 1) - 1) / ($amount + 1), {window})"
+    windows: [10, 20, 60]
+    direction: -1
+    category: candidate_liquidity
+    description: "{window} day Amihud-style illiquidity proxy; lower values are ranked higher."
+  - name: price_volume_divergence_{window}
+    expression: "($close / Ref($close, {window}) - 1) - (Mean($volume, {window}) / Ref(Mean($volume, {window}), {window}) - 1)"
+    windows: [10, 20, 60]
+    direction: 1
+    category: candidate_divergence
+    description: "{window} day price momentum minus volume momentum."
+  - name: quiet_breakout_{window}
+    expression: "($close / Ref($close, {window}) - 1) - (Mean($volume, 5) / Mean($volume, {window}) - 1)"
+    windows: [20, 60]
+    direction: 1
+    category: candidate_divergence
+    description: "{window} day price advance not confirmed by recent volume expansion."

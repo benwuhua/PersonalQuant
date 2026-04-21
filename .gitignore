@@ -1,34 +1,18 @@
-# Python
+.venv/
 __pycache__/
 *.py[cod]
-*.so
-.venv/
-venv/
-.env
-.env.*
 .pytest_cache/
 .mypy_cache/
-.DS_Store
+src/*.egg-info/
+configs/qlib_lgb_workflow*.yaml
+docs/superpowers/
 
-# Local logs
-logs/*
-!logs/.gitkeep
-
-# Generated research artifacts
-data/outputs/*
-!data/outputs/.gitkeep
-
-data/processed/*
-!data/processed/.gitkeep
-
-data/archives/*
-!data/archives/.gitkeep
-
-data/validation/*
-!data/validation/.gitkeep
-
-# Local config overrides
-config/config.local.yaml
-
-# Notebook checkpoints
-.ipynb_checkpoints/
+# Large local artifacts
+data/qlib/
+data/source/
+data/akshare/
+reports/*.csv
+reports/*.parquet
+reports/*.png
+mlruns/
+Users/
