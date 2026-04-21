@@ -5,7 +5,6 @@ __pycache__/
 .mypy_cache/
 src/*.egg-info/
 configs/qlib_lgb_workflow*.yaml
-docs/superpowers/
 
 # Large local artifacts
 data/qlib/
